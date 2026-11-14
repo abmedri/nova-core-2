@@ -11,7 +11,6 @@ import streamlit as st
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.drawing.image import Image as OpenpyxlImage
 
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -24,15 +23,14 @@ def processar_arquivo_upload(arquivo_carregado):
     try:
         if nome.endswith('.csv'):
             for enc in ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
-                try:
-                    arquivo_carregado.seek(0)
-                    df = pd.read_csv(arquivo_carregado, encoding=enc, sep=';', low_memory=False)
-                    if df.shape[1] <= 1:
+                for sep in [';', ',']:
+                    try:
                         arquivo_carregado.seek(0)
-                        df = pd.read_csv(arquivo_carregado, encoding=enc, sep=',', low_memory=False)
-                    return df, "Inventário processado com sucesso."
-                except Exception:
-                    continue
+                        df = pd.read_csv(arquivo_carregado, encoding=enc, sep=sep, low_memory=False)
+                        if df.shape[1] > 1:
+                            return df, "Inventário processado com sucesso."
+                    except Exception:
+                        continue
             return None, "Erro: Não foi possível decodificar o ficheiro CSV."
         elif nome.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(arquivo_carregado)
@@ -106,7 +104,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for _, row in df_localizacao.iterrows():
         loc = limpar_nome_local(row.get(col_loc, ''))
-        cod = str(row.get(col_cod_loc, '')).strip()
+        cod = str(row.get(col_cod_loc, '')).strip().replace('.0', '')
         desc = str(row.get(col_desc_loc, '')).strip()
         try:
             qtd = int(float(row.get(col_qtd_loc, 0)))
@@ -123,7 +121,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower()), 'Codigo')
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
     col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower()), 'Estoque')
-    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().values)
+    
+    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().str.replace('.0', '', regex=False).values)
     
     itens_filtrados_temp = []
     if tipo_filtro == "SEM_SALDO":
@@ -134,7 +133,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, soma_comptar_val, locs))
     else:
         for idx, row in df_estoque.iterrows():
-            cod = str(row.get(col_cod_est, '')).strip()
+            cod = str(row.get(col_cod_est, '')).strip().replace('.0', '')
             desc = str(row.get(col_desc_est, ''))
             try:
                 est = int(float(row.get(col_est, 0)))
@@ -298,7 +297,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     
     for _, row in df_localizacao.iterrows():
         loc = limpar_nome_local(row.get(col_loc, ''))
-        cod = str(row.get(col_cod_loc, '')).strip()
+        cod = str(row.get(col_cod_loc, '')).strip().replace('.0', '')
         desc = str(row.get(col_desc_loc, '')).strip()
         try:
             qtd = int(float(row.get(col_qtd_loc, 0)))
@@ -315,7 +314,8 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower()), 'Codigo')
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
     col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower()), 'Estoque')
-    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().values)
+    
+    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().str.replace('.0', '', regex=False).values)
     
     itens_filtrados_temp = []
     if tipo_filtro == "SEM_SALDO":
@@ -326,7 +326,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, soma_comptar_val, locs))
     else:
         for idx, row in df_estoque.iterrows():
-            cod = str(row.get(col_cod_est, '')).strip()
+            cod = str(row.get(col_cod_est, '')).strip().replace('.0', '')
             desc = str(row.get(col_desc_est, ''))
             try:
                 est = int(float(row.get(col_est, 0)))
