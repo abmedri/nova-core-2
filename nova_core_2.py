@@ -58,7 +58,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA (CRUZAMENTO EXATO POR CÓDIGO)
+# GERADOR DO EXCEL DE CONFERÊNCIA (COM AUTO-AJUSTE INTELIGENTE)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -109,7 +109,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
     col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower()), 'Estoque')
     
-    # Criar dicionários de Estoque e Descrição baseados estritamente no Código
     estoques_dict = {}
     descricoes_estoque_dict = {}
     for _, row in df_estoque.iterrows():
@@ -278,6 +277,20 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
+    # Auto-ajuste refinado para o Excel (Garantindo largura confortável para Descrição e colunas)
+    for col in ws_saldo.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row >= 4 and cell.value is not None:
+                val_str = str(cell.value)
+                if not val_str.startswith("="):
+                    max_len = max(max_len, len(val_str))
+        if col[0].column == 2:
+            ws_saldo.column_dimensions[col_letter].width = max(max_len + 4, 38)
+        else:
+            ws_saldo.column_dimensions[col_letter].width = max(max_len + 3, 10)
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -285,7 +298,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA (CRUZAMENTO EXATO POR CÓDIGO)
+# GERADOR DE PDF DE CONFERÊNCIA (AUTO-AJUSTE PROPORCIONAL ANTI-QUEBRA)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -417,10 +430,10 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     styles = getSampleStyleSheet()
     estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor('#1F4E78'))
-    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=5.0, leading=6, textColor=colors.white, alignment=1)
+    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=6.0, leading=7, textColor=colors.white, alignment=1)
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=8, leading=10, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor('#111827'), alignment=0)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#111827'), alignment=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
@@ -442,21 +455,21 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas = [
             Paragraph(f"<nobr>{cod_formatado}</nobr>", estilo_td_codigo),
             Paragraph(str(desc), estilo_td_esq),
-            Paragraph(str(est), estilo_td_centro),
-            Paragraph(str(cel_comptar), estilo_td_centro),
-            Paragraph(str(cel_divergencia), estilo_td_centro)
+            Paragraph(f"<nobr>{est}</nobr>", estilo_td_centro),
+            Paragraph(f"<nobr>{cel_comptar}</nobr>", estilo_td_centro),
+            Paragraph(f"<nobr>{cel_divergencia}</nobr>", estilo_td_centro)
         ]
         
         if tem_na_comptar:
             contagens_vals = []
             for i in range(max_locais_encontrados):
                 if i < len(locs_prod):
-                    contagens_vals.append(Paragraph(str(int(float(str(locs_prod[i][1]).replace(',', '.')))), estilo_td_centro))
+                    contagens_vals.append(Paragraph(f"<nobr>{int(float(str(locs_prod[i][1]).replace(',', '.')))}</nobr>", estilo_td_centro))
                 else:
                     contagens_vals.append(Paragraph("", estilo_td_centro))
             locais_vals = [Paragraph(f"<nobr>{str(limpar_nome_local(locs_prod[i][0])).replace(' ', '&nbsp;')}</nobr>", estilo_td_centro) if i < len(locs_prod) else Paragraph("", estilo_td_centro) for i in range(max_locais_encontrados)]
         else:
-            contagens_vals = [Paragraph("0", estilo_td_centro)] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
+            contagens_vals = [Paragraph("<nobr>0</nobr>", estilo_td_centro)] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
             locais_vals = [Paragraph("<nobr>Sem&nbsp;local</nobr>", estilo_td_centro)] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
             
         linha_celulas.extend(contagens_vals)
@@ -465,15 +478,15 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         
     largura_util = 792 - 44
     largura_codigo = 52
-    largura_desc = 150
-    largura_est = 26
-    largura_comp = 28
-    largura_div = 32
+    largura_desc = 145
+    largura_est = 30
+    largura_comp = 30
+    largura_div = 34
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     
     num_colunas = len(headers_pdf)
     colunas_restantes = num_colunas - 5
-    largura_outras = (largura_util - largura_fixa_inicial) / colunas_restantes if colunas_restantes > 0 else 22
+    largura_outras = (largura_util - largura_fixa_inicial) / colunas_restantes if colunas_restantes > 0 else 24
     col_widths = [largura_codigo, largura_desc, largura_est, largura_comp, largura_div] + [largura_outras] * colunas_restantes
     
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
