@@ -30,6 +30,17 @@ def processar_arquivo_upload(arquivo_carregado):
                     if df.shape[1] <= 1:
                         arquivo_carregado.seek(0)
                         df = pd.read_csv(arquivo_carregado, encoding=enc, sep=',', low_memory=False)
+                    
+                    # Converte colunas numéricas com vírgula se necessário (como Estoque)
+                    for col in df.columns:
+                        if col.lower() in ['estoque', 'est. mínimo', 'est. máximo', 'custo', 'venda', 'total custo', 'total venda', 'quantidade', 'saldo']:
+                            try:
+                                serie_str = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+                                conv_num = pd.to_numeric(serie_str, errors='coerce')
+                                if conv_num.notna().sum() > 0:
+                                    df[col] = conv_num
+                            except Exception:
+                                pass
                     return df, "Inventário processado com sucesso."
                 except Exception:
                     continue
@@ -43,6 +54,13 @@ def processar_arquivo_upload(arquivo_carregado):
         return None, "Erro ao processar ficheiro: " + str(e)
 
 
+def limpar_codigo(val):
+    s = str(val).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
 def limpar_nome_local(val):
     s = str(val).strip()
     if s.endswith('.0'):
@@ -51,13 +69,13 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA (ORIGINAL EXATO DA NOVA CORE)
+# GERADOR DO EXCEL DE CONFERÊNCIA
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
     
     fonte_padrao = Font(name="Arial", size=10)
-    fonte_descricao_excel = Font(name="Arial", size=9) # Fonte tamanho 9 para a descrição no Excel
+    fonte_descricao_excel = Font(name="Arial", size=9) # Fonte tamanho 9 para a descrição
     fonte_negrito = Font(name="Arial", size=10, bold=True)
     fonte_cabecalho = Font(name="Arial", size=10, bold=True, color="FFFFFF")
     fill_cabecalho = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
@@ -72,10 +90,10 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         top=Side(style='medium', color='000000'), bottom=Side(style='medium', color='000000')
     )
     
-    col_loc = next((c for c in df_localizacao.columns if 'local' in c.lower()), df_localizacao.columns[2])
-    col_cod_loc = next((c for c in df_localizacao.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_localizacao.columns[3])
-    col_desc_loc = next((c for c in df_localizacao.columns if 'desc' in c.lower()), df_localizacao.columns[4])
-    col_qtd_loc = next((c for c in df_localizacao.columns if 'qtd' in c.lower() or 'quantidade' in c.lower()), df_localizacao.columns[5])
+    col_loc = next((c for c in df_localizacao.columns if 'local' in c.lower()), df_localizacao.columns[2] if len(df_localizacao.columns) > 2 else df_localizacao.columns[0])
+    col_cod_loc = next((c for c in df_localizacao.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_localizacao.columns[3] if len(df_localizacao.columns) > 3 else df_localizacao.columns[0])
+    col_desc_loc = next((c for c in df_localizacao.columns if 'desc' in c.lower()), df_localizacao.columns[4] if len(df_localizacao.columns) > 4 else df_localizacao.columns[0])
+    col_qtd_loc = next((c for c in df_localizacao.columns if 'qtd' in c.lower() or 'quantidade' in c.lower()), df_localizacao.columns[5] if len(df_localizacao.columns) > 5 else df_localizacao.columns[0])
     
     locais_por_produto = {}
     soma_comptar_por_produto = {}
@@ -83,10 +101,10 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     
     for _, row in df_localizacao.iterrows():
         loc = limpar_nome_local(row.get(col_loc, ''))
-        cod = str(row.get(col_cod_loc, '')).strip()
+        cod = limpar_codigo(row.get(col_cod_loc, ''))
         desc = str(row.get(col_desc_loc, '')).strip()
         try:
-            qtd = int(float(row.get(col_qtd_loc, 0)))
+            qtd = int(float(str(row.get(col_qtd_loc, 0)).replace(',', '.')))
         except Exception:
             qtd = 0
             
@@ -98,11 +116,11 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         locais_por_produto[cod].append((loc, qtd))
         soma_comptar_por_produto[cod] += qtd
         
-    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower()), 'Codigo')
-    col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
-    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower()), 'Estoque')
+    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_estoque.columns[0])
+    col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), df_estoque.columns[1] if len(df_estoque.columns) > 1 else df_estoque.columns[0])
+    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower() or 'fisico' in c.lower()), df_estoque.columns[6] if len(df_estoque.columns) > 6 else df_estoque.columns[0])
     
-    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().values)
+    codigos_estoque_set = set(df_estoque[col_cod_est].apply(limpar_codigo).values)
     itens_filtrados_temp = []
     
     if tipo_filtro == "SEM_SALDO":
@@ -114,10 +132,11 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, divergencia_val, locs))
     else:
         for idx, row in df_estoque.iterrows():
-            cod = str(row.get(col_cod_est, '')).strip()
-            desc = row.get(col_desc_est, '')
+            cod = limpar_codigo(row.get(col_cod_est, ''))
+            desc = str(row.get(col_desc_est, ''))
             try:
-                est = int(float(row.get(col_est, 0)))
+                est_val_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
+                est = int(float(est_val_raw))
             except Exception:
                 est = 0
             
@@ -194,22 +213,15 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     
     headers_saldo = ["Codigo", "Descrição", "Estoque", "COMPTAR", "DIVERGÊNCIA"]
     for i in range(1, max_locais_encontrados + 1):
-        if i == 1:
-            headers_saldo.append("CONT. 1")
-        else:
-            headers_saldo.append(str(int(i)))
-            
+        headers_saldo.append("CONT. 1" if i == 1 else str(int(i)))
     for i in range(1, max_locais_encontrados + 1):
-        if i == 1:
-            headers_saldo.append("Local 1")
-        else:
-            headers_saldo.append(str(int(i)))
+        headers_saldo.append("Local 1" if i == 1 else str(int(i)))
         
     ws_saldo.row_dimensions[1].height = 24
     ws_saldo.row_dimensions[2].height = 20
     ws_saldo.row_dimensions[3].height = 10
-    
     ws_saldo.row_dimensions[4].height = 22
+    
     for col_idx, h_text in enumerate(headers_saldo, start=1):
         cell = ws_saldo.cell(row=4, column=col_idx, value=str(h_text).replace('.0', ''))
         cell.font = fonte_cabecalho
@@ -230,12 +242,11 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             contagens_vals = []
             for i in range(max_locais_encontrados):
                 if i < len(locs_prod):
-                    val_num = locs_prod[i][1]
                     try:
-                        val_int = int(float(val_num))
-                        contagens_vals.append(val_int)
+                        val_num = str(locs_prod[i][1]).replace(',', '.')
+                        contagens_vals.append(int(float(val_num)))
                     except Exception:
-                        contagens_vals.append(val_num)
+                        contagens_vals.append(locs_prod[i][1])
                 else:
                     contagens_vals.append("")
                     
@@ -248,6 +259,29 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         linha_dados.extend(locais_vals)
         ws_saldo.append(linha_dados)
         
+    for row in ws_saldo.iter_rows(min_row=5, max_row=ws_saldo.max_row, min_col=1, max_col=len(headers_saldo)):
+        for cell in row:
+            if cell.column == 2:
+                cell.font = fonte_descricao_excel
+            else:
+                cell.font = fonte_padrao
+                
+            cell.border = borda_fina
+            if cell.row >= 5 and cell.column >= 3:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '0'
+            
+            if cell.column == 5:
+                cell.fill = fill_cinza_claro
+                cell.font = Font(name="Arial", size=10, bold=True)
+            
+            if cell.column in [1, 3, 4, 5]:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif cell.column == 2:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -255,7 +289,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA (ORIGINAL EXATO DA NOVA CORE)
+# GERADOR DE PDF DE CONFERÊNCIA
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -313,10 +347,10 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for _, row in df_localizacao.iterrows():
         loc = limpar_nome_local(row.get(col_loc, ''))
-        cod = str(row.get(col_cod_loc, '')).strip()
+        cod = limpar_codigo(row.get(col_cod_loc, ''))
         desc = str(row.get(col_desc_loc, '')).strip()
         try:
-            qtd = int(float(row.get(col_qtd_loc, 0)))
+            qtd = int(float(str(row.get(col_qtd_loc, 0)).replace(',', '.')))
         except Exception:
             qtd = 0
             
@@ -330,7 +364,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower()), 'Codigo')
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
     col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower()), 'Estoque')
-    codigos_estoque_set = set(df_estoque[col_cod_est].astype(str).str.strip().values)
+    codigos_estoque_set = set(df_estoque[col_cod_est].apply(limpar_codigo).values)
     
     itens_filtrados_temp = []
     if tipo_filtro == "SEM_SALDO":
@@ -341,10 +375,11 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, soma_comptar_val, locs))
     else:
         for idx, row in df_estoque.iterrows():
-            cod = str(row.get(col_cod_est, '')).strip()
+            cod = limpar_codigo(row.get(col_cod_est, ''))
             desc = str(row.get(col_desc_est, ''))
             try:
-                est = int(float(row.get(col_est, 0)))
+                est_val_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
+                est = int(float(est_val_raw))
             except Exception:
                 est = 0
             
@@ -413,7 +448,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
             contagens_vals = []
             for i in range(max_locais_encontrados):
                 if i < len(locs_prod):
-                    contagens_vals.append(Paragraph(str(int(float(locs_prod[i][1]))), estilo_td_centro))
+                    contagens_vals.append(Paragraph(str(int(float(str(locs_prod[i][1]).replace(',', '.')))), estilo_td_centro))
                 else:
                     contagens_vals.append(Paragraph("", estilo_td_centro))
             locais_vals = [Paragraph(f"<nobr>{str(limpar_nome_local(locs_prod[i][0])).replace(' ', '&nbsp;')}</nobr>", estilo_td_centro) if i < len(locs_prod) else Paragraph("", estilo_td_centro) for i in range(max_locais_encontrados)]
