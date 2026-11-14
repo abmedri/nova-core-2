@@ -30,17 +30,6 @@ def processar_arquivo_upload(arquivo_carregado):
                     if df.shape[1] <= 1:
                         arquivo_carregado.seek(0)
                         df = pd.read_csv(arquivo_carregado, encoding=enc, sep=',', low_memory=False)
-                    
-                    # Converte colunas numéricas com vírgula se necessário (como Estoque)
-                    for col in df.columns:
-                        if col.lower() in ['estoque', 'est. mínimo', 'est. máximo', 'custo', 'venda', 'total custo', 'total venda', 'quantidade', 'saldo']:
-                            try:
-                                serie_str = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-                                conv_num = pd.to_numeric(serie_str, errors='coerce')
-                                if conv_num.notna().sum() > 0:
-                                    df[col] = conv_num
-                            except Exception:
-                                pass
                     return df, "Inventário processado com sucesso."
                 except Exception:
                     continue
@@ -69,7 +58,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA
+# GERADOR DO EXCEL DE CONFERÊNCIA (CRUZAMENTO EXATO POR CÓDIGO)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -90,10 +79,10 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         top=Side(style='medium', color='000000'), bottom=Side(style='medium', color='000000')
     )
     
-    col_loc = next((c for c in df_localizacao.columns if 'local' in c.lower()), df_localizacao.columns[2] if len(df_localizacao.columns) > 2 else df_localizacao.columns[0])
-    col_cod_loc = next((c for c in df_localizacao.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_localizacao.columns[3] if len(df_localizacao.columns) > 3 else df_localizacao.columns[0])
-    col_desc_loc = next((c for c in df_localizacao.columns if 'desc' in c.lower()), df_localizacao.columns[4] if len(df_localizacao.columns) > 4 else df_localizacao.columns[0])
-    col_qtd_loc = next((c for c in df_localizacao.columns if 'qtd' in c.lower() or 'quantidade' in c.lower()), df_localizacao.columns[5] if len(df_localizacao.columns) > 5 else df_localizacao.columns[0])
+    col_loc = next((c for c in df_localizacao.columns if 'local' in c.lower()), df_localizacao.columns[2])
+    col_cod_loc = next((c for c in df_localizacao.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_localizacao.columns[3])
+    col_desc_loc = next((c for c in df_localizacao.columns if 'desc' in c.lower()), df_localizacao.columns[4])
+    col_qtd_loc = next((c for c in df_localizacao.columns if 'qtd' in c.lower() or 'quantidade' in c.lower()), df_localizacao.columns[5])
     
     locais_por_produto = {}
     soma_comptar_por_produto = {}
@@ -116,11 +105,25 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         locais_por_produto[cod].append((loc, qtd))
         soma_comptar_por_produto[cod] += qtd
         
-    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_estoque.columns[0])
-    col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), df_estoque.columns[1] if len(df_estoque.columns) > 1 else df_estoque.columns[0])
-    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower() or 'fisico' in c.lower()), df_estoque.columns[6] if len(df_estoque.columns) > 6 else df_estoque.columns[0])
+    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower() or 'cod' in c.lower()), 'Codigo')
+    col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
+    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower()), 'Estoque')
     
-    codigos_estoque_set = set(df_estoque[col_cod_est].apply(limpar_codigo).values)
+    # Criar dicionários de Estoque e Descrição baseados estritamente no Código
+    estoques_dict = {}
+    descricoes_estoque_dict = {}
+    for _, row in df_estoque.iterrows():
+        cod_est = limpar_codigo(row.get(col_cod_est, ''))
+        desc_est = row.get(col_desc_est, '')
+        try:
+            val_est_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
+            val_est = int(float(val_est_raw))
+        except Exception:
+            val_est = 0
+        estoques_dict[cod_est] = val_est
+        descricoes_estoque_dict[cod_est] = desc_est
+
+    codigos_estoque_set = set(estoques_dict.keys())
     itens_filtrados_temp = []
     
     if tipo_filtro == "SEM_SALDO":
@@ -131,19 +134,12 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
                 divergencia_val = soma_comptar_val - 0
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, divergencia_val, locs))
     else:
-        for idx, row in df_estoque.iterrows():
-            cod = limpar_codigo(row.get(col_cod_est, ''))
-            desc = str(row.get(col_desc_est, ''))
-            try:
-                est_val_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
-                est = int(float(est_val_raw))
-            except Exception:
-                est = 0
-            
-            locs_prod = locais_por_produto.get(cod, [])
+        for cod_est_limpo, est_val in estoques_dict.items():
+            desc = descricoes_estoque_dict.get(cod_est_limpo, descricoes_comptar.get(cod_est_limpo, ""))
+            locs_prod = locais_por_produto.get(cod_est_limpo, [])
             tem_na_comptar = len(locs_prod) > 0
-            soma_comptar_val = soma_comptar_por_produto.get(cod, 0) if tem_na_comptar else 0
-            divergencia_val = soma_comptar_val - est
+            soma_comptar_val = soma_comptar_por_produto.get(cod_est_limpo, 0) if tem_na_comptar else 0
+            divergencia_val = soma_comptar_val - est_val
             
             incluir = False
             if tipo_filtro == "TODOS":
@@ -159,7 +155,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
                     incluir = True
                     
             if incluir:
-                itens_filtrados_temp.append((cod, desc, est, tem_na_comptar, soma_comptar_val, divergencia_val, locs_prod))
+                itens_filtrados_temp.append((cod_est_limpo, desc, est_val, tem_na_comptar, soma_comptar_val, divergencia_val, locs_prod))
 
     itens_filtrados_temp.sort(key=lambda x: str(x[1]).strip().upper())
 
@@ -289,7 +285,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA
+# GERADOR DE PDF DE CONFERÊNCIA (CRUZAMENTO EXATO POR CÓDIGO)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -361,10 +357,24 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         locais_por_produto[cod].append((loc, qtd))
         soma_comptar_por_produto[cod] += qtd
         
-    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower()), 'Codigo')
+    col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower() or 'cod' in c.lower()), 'Codigo')
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), 'Descrição')
-    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower()), 'Estoque')
-    codigos_estoque_set = set(df_estoque[col_cod_est].apply(limpar_codigo).values)
+    col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower()), 'Estoque')
+    
+    estoques_dict = {}
+    descricoes_estoque_dict = {}
+    for _, row in df_estoque.iterrows():
+        cod_est = limpar_codigo(row.get(col_cod_est, ''))
+        desc_est = row.get(col_desc_est, '')
+        try:
+            val_est_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
+            val_est = int(float(val_est_raw))
+        except Exception:
+            val_est = 0
+        estoques_dict[cod_est] = val_est
+        descricoes_estoque_dict[cod_est] = desc_est
+
+    codigos_estoque_set = set(estoques_dict.keys())
     
     itens_filtrados_temp = []
     if tipo_filtro == "SEM_SALDO":
@@ -374,19 +384,12 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
                 soma_comptar_val = soma_comptar_por_produto.get(cod, 0)
                 itens_filtrados_temp.append((cod, desc_item, 0, True, soma_comptar_val, soma_comptar_val, locs))
     else:
-        for idx, row in df_estoque.iterrows():
-            cod = limpar_codigo(row.get(col_cod_est, ''))
-            desc = str(row.get(col_desc_est, ''))
-            try:
-                est_val_raw = str(row.get(col_est, 0)).replace('.', '').replace(',', '.')
-                est = int(float(est_val_raw))
-            except Exception:
-                est = 0
-            
-            locs_prod = locais_por_produto.get(cod, [])
+        for cod_est_limpo, est_val in estoques_dict.items():
+            desc = descricoes_estoque_dict.get(cod_est_limpo, descricoes_comptar.get(cod_est_limpo, ""))
+            locs_prod = locais_por_produto.get(cod_est_limpo, [])
             tem_na_comptar = len(locs_prod) > 0
-            soma_comptar_val = soma_comptar_por_produto.get(cod, 0) if tem_na_comptar else 0
-            divergencia_val = soma_comptar_val - est
+            soma_comptar_val = soma_comptar_por_produto.get(cod_est_limpo, 0) if tem_na_comptar else 0
+            divergencia_val = soma_comptar_val - est_val
             
             incluir = False
             if tipo_filtro == "TODOS":
@@ -402,7 +405,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
                     incluir = True
                     
             if incluir:
-                itens_filtrados_temp.append((cod, desc, est, tem_na_comptar, soma_comptar_val, divergencia_val, locs_prod))
+                itens_filtrados_temp.append((cod_est_limpo, desc, est_val, tem_na_comptar, soma_comptar_val, divergencia_val, locs_prod))
 
     itens_filtrados_temp.sort(key=lambda x: str(x[1]).strip().upper())
 
