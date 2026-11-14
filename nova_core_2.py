@@ -24,15 +24,14 @@ def processar_arquivo_upload(arquivo_carregado):
     try:
         if nome.endswith('.csv'):
             for enc in ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
-                try:
-                    arquivo_carregado.seek(0)
-                    df = pd.read_csv(arquivo_carregado, encoding=enc, sep=';', low_memory=False)
-                    if df.shape[1] <= 1:
+                for sep in [';', ',']:
+                    try:
                         arquivo_carregado.seek(0)
-                        df = pd.read_csv(arquivo_carregado, encoding=enc, sep=',', low_memory=False)
-                    return df, "Inventário processado com sucesso."
-                except Exception:
-                    continue
+                        df = pd.read_csv(arquivo_carregado, encoding=enc, sep=sep, low_memory=False)
+                        if df.shape[1] > 1:
+                            return df, "Inventário processado com sucesso."
+                    except Exception:
+                        continue
             return None, "Erro: Não foi possível decodificar o ficheiro CSV."
         elif nome.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(arquivo_carregado)
@@ -64,7 +63,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     wb = openpyxl.Workbook()
     
     fonte_padrao = Font(name="Arial", size=10)
-    fonte_descricao_excel = Font(name="Arial", size=9) # Fonte tamanho 9 para a descrição
+    fonte_descricao_excel = Font(name="Arial", size=9)
     fonte_negrito = Font(name="Arial", size=10, bold=True)
     fonte_cabecalho = Font(name="Arial", size=10, bold=True, color="FFFFFF")
     fill_cabecalho = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
@@ -166,14 +165,12 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     ws_saldo.title = nome_aba
     ws_saldo.views.sheetView[0].showGridLines = True
     
-    # 📐 Otimização de Página Paisagem com Margens Mínimas (Estreitas)
     ws_saldo.page_setup.orientation = ws_saldo.ORIENTATION_LANDSCAPE
     ws_saldo.page_setup.paperSize = ws_saldo.PAPERSIZE_A4
     ws_saldo.sheet_properties.pageSetUpPr.fitToPage = True
     ws_saldo.page_setup.fitToWidth = 1
     ws_saldo.page_setup.fitToHeight = 0
     
-    # Margens mínimas (em polegadas) para ganho máximo de área visual e de impressão
     ws_saldo.page_margins.left = 0.2
     ws_saldo.page_margins.right = 0.2
     ws_saldo.page_margins.top = 0.3
@@ -580,7 +577,7 @@ def main():
     """, unsafe_allow_html=True)
     
     st.markdown("### 📋 GERAÇÃO AUTOMATIZADA DE LISTAS DE CONFERÊNCIA")
-    st.markdown("Insira o número da loja e carregue os arquivos abaixo para gerar as listas com todas las colunas preservadas em linha única:")
+    st.markdown("Insira o número da loja e carregue os arquivos abaixo para gerar as listas com todas as colunas preservadas em linha única:")
     
     numero_loja_ui = st.number_input("Número da Loja (ex: 13016 ou 17315)", min_value=1, max_value=99999, value=13016, step=1)
     
