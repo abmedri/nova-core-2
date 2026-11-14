@@ -58,7 +58,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA (COM AUTO-AJUSTE INTELIGENTE)
+# GERADOR DO EXCEL DE CONFERÊNCIA (COM MARGENS MÍNIMAS EM PAISAGEM)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -166,11 +166,20 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     ws_saldo.title = nome_aba
     ws_saldo.views.sheetView[0].showGridLines = True
     
+    # 📐 Otimização de Página Paisagem com Margens Mínimas (Estreitas)
     ws_saldo.page_setup.orientation = ws_saldo.ORIENTATION_LANDSCAPE
     ws_saldo.page_setup.paperSize = ws_saldo.PAPERSIZE_A4
     ws_saldo.sheet_properties.pageSetUpPr.fitToPage = True
     ws_saldo.page_setup.fitToWidth = 1
     ws_saldo.page_setup.fitToHeight = 0
+    
+    # Margens mínimas (em polegadas) para ganho máximo de área visual e de impressão
+    ws_saldo.page_margins.left = 0.2
+    ws_saldo.page_margins.right = 0.2
+    ws_saldo.page_margins.top = 0.3
+    ws_saldo.page_margins.bottom = 0.3
+    ws_saldo.page_margins.header = 0.1
+    ws_saldo.page_margins.footer = 0.1
     
     ws_saldo.oddFooter.left.text = f"Loja: {numero_loja_input} | Grupo KMB"
     ws_saldo.oddFooter.center.text = "Exatidão • Controle • Eficiência"
@@ -277,7 +286,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Auto-ajuste refinado para o Excel (Garantindo largura confortável para Descrição e colunas)
     for col in ws_saldo.columns:
         max_len = 0
         col_letter = get_column_letter(col[0].column)
@@ -572,7 +580,7 @@ def main():
     """, unsafe_allow_html=True)
     
     st.markdown("### 📋 GERAÇÃO AUTOMATIZADA DE LISTAS DE CONFERÊNCIA")
-    st.markdown("Insira o número da loja e carregue os arquivos abaixo para gerar as listas com todas as colunas preservadas em linha única:")
+    st.markdown("Insira o número da loja e carregue os arquivos abaixo para gerar as listas com todas las colunas preservadas em linha única:")
     
     numero_loja_ui = st.number_input("Número da Loja (ex: 13016 ou 17315)", min_value=1, max_value=99999, value=13016, step=1)
     
