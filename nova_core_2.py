@@ -1,5 +1,5 @@
 # ====================================================================================
-# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA COMPLETO)
+# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (VERSÃO COMPLETA SALVA)
 # ====================================================================================
 import os
 import io
@@ -59,7 +59,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA ( COM AUTOEXPANSÃO DE COLUNAS E BORDAS PRETAS )
+# GERADOR DO EXCEL DE CONFERÊNCIA
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -295,7 +295,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 
-    # 📏 Bloco de autoajuste dinâmico de largura das colunas restabelecido
     for col in ws_saldo.columns:
         max_len = 0
         col_letter = get_column_letter(col[0].column)
@@ -313,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO PARA PAPEL A4
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -335,24 +334,24 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 10
+        margem = 20
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
-        self.line(margem, 22, largura_pagina - margem, 22)
+        self.line(margem, 20, largura_pagina - margem, 20)
         
         caminho_brasao = "brasao_sem_fundo.png" if os.path.exists("brasao_sem_fundo.png") else ("1000352084.jpg" if os.path.exists("1000352084.jpg") else None)
         if caminho_brasao:
             try:
-                self.drawImage(caminho_brasao, margem, 6, width=45, height=13, preserveAspectRatio=True, mask='auto')
+                self.drawImage(caminho_brasao, margem, 5, width=40, height=12, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
                 
         texto_esquerda = "GRUPO KMB // Auditoria Patrimonial • Exatidão • Controle • Eficiência"
-        self.drawString(margem + 50, 10, texto_esquerda)
+        self.drawString(margem + 45, 9, texto_esquerda)
         
         texto_pagina = f"Página {self._pageNumber} de {page_count}"
-        self.drawRightString(largura_pagina - margem, 10, texto_pagina)
+        self.drawRightString(largura_pagina - margem, 9, texto_pagina)
         self.restoreState()
 
 
@@ -447,26 +446,27 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     max_locais_encontrados = max(locais_com_contagem) if locais_com_contagem else 1
     
     buffer = io.BytesIO()
+    
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=14,
-        leftMargin=14,
-        topMargin=18,
-        bottomMargin=28
+        rightMargin=20,
+        leftMargin=20,
+        topMargin=15,
+        bottomMargin=25
     )
     
     styles = getSampleStyleSheet()
-    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor('#1F4E78'))
-    
+    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1F4E78'))
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
-    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=4.5, leading=5.5, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=3.8, leading=4.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
+    
+    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.0, leading=7.0, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
-    story.append(Spacer(1, 3))
+    story.append(Spacer(1, 2))
     
     headers_pdf = ["Código", "Descrição", "EST.", "COMP.", "DIVERG."]
     for i in range(1, max_locais_encontrados + 1):
@@ -525,18 +525,17 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    largura_util = 792 - 28
-    largura_codigo = 42
+    largura_util = 752.0
     
-    # 🛡️ Fator multiplicador 4.2 e teto em 250 pt para descrições longas
+    largura_codigo = 40.0
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(110.0, min(float(max_len_desc * 4.2), 250.0))
+    largura_desc = max(80.0, min(float(max_len_desc * 3.0), 160.0))
     
-    largura_est = 26
-    largura_comp = 26
-    largura_div = 28
+    largura_est = 20.0
+    largura_comp = 20.0
+    largura_div = 24.0
+    
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
-    
     largura_restante_total = largura_util - largura_fixa_inicial
     
     pesos_colunas = []
@@ -550,7 +549,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 16.0))
+        col_widths.append(max(L_calc, 18.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -558,7 +557,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     idx_col_c1 = 5
     idx_col_loc1 = 5 + max_locais_encontrados
     
-    # 🛡️ Grid com bordas pretas puras (#000000)
     tabela_pdf.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E78')),
         ('BACKGROUND', (idx_col_divergencia, 1), (idx_col_divergencia, -1), colors.HexColor('#D9D9D9')),
@@ -577,6 +575,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     return buffer
 
 
+# ====================================================================================
+# APLICAÇÃO STREAMLIT PRINCIPAL
+# ====================================================================================
 def main():
     st.set_page_config(page_title="GRUPO KMB // NOVA CORE 2", page_icon="⚡", layout="wide")
     
@@ -715,7 +716,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Otimizado para Papel A4)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
