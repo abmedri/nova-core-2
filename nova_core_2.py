@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGENS LATERAIS AMPLIADAS DE 55 PT)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGEM EQUILIBRADA DE 28 PT)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -334,7 +334,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 55  # Margem generosa alinhada com as margens de segurança do documento
+        margem = 28  # Margem perfeitamente equilibrada e alinhada
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -447,12 +447,12 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     buffer = io.BytesIO()
     
-    # 🛡️ Margens esquerda e direita aumentadas para 55 pt (respiro perfeito e visível nas extremidades)
+    # 🛡️ Margem lateral de 28 pt (espaço ideal para respiro sem apertar as colunas)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=55,
-        leftMargin=55,
+        rightMargin=28,
+        leftMargin=28,
         topMargin=18,
         bottomMargin=28
     )
@@ -528,8 +528,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil considerando as margens de 55 pt de cada lado (792 - 110 = 682 pt)
-    largura_util = 792 - 110
+    # Largura útil considerando as margens de 28 pt de cada lado (792 - 56 = 736 pt)
+    largura_util = 792 - 56
     largura_codigo = 42
     
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
@@ -553,7 +553,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 24.0))
+        # ⚡ Largura mínima ampliada para 26.0 para garantir espaço de sobra para os locais
+        col_widths.append(max(L_calc, 26.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
