@@ -1,5 +1,5 @@
 # ====================================================================================
-# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA BLINDADO)
+# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA AJUSTADO)
 # ====================================================================================
 import os
 import io
@@ -59,7 +59,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA (BLINDADO CONTRA COLUNAS EM BRANCO)
+# GERADOR DO EXCEL DE CONFERÊNCIA (COM FILTRO DE FALTAS AJUSTADO)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -80,7 +80,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         top=Side(style='medium', color='000000'), bottom=Side(style='medium', color='000000')
     )
     
-    # Mapeamento robusto de colunas de localização
     col_loc = next((c for c in df_localizacao.columns if 'local' in c.lower()), df_localizacao.columns[0])
     col_cod_loc = next((c for c in df_localizacao.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_localizacao.columns[0])
     col_desc_loc = next((c for c in df_localizacao.columns if 'desc' in c.lower()), df_localizacao.columns[0])
@@ -110,7 +109,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
         locais_por_produto[cod].append((loc, qtd))
         soma_comptar_por_produto[cod] += qtd
         
-    # Mapeamento robusto de colunas de estoque
     col_cod_est = next((c for c in df_estoque.columns if 'codigo' in c.lower() or 'cod' in c.lower()), df_estoque.columns[0])
     col_desc_est = next((c for c in df_estoque.columns if 'desc' in c.lower()), df_estoque.columns[0])
     col_est = next((c for c in df_estoque.columns if 'estoque' in c.lower() or 'saldo' in c.lower()), df_estoque.columns[0])
@@ -146,7 +144,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
                 desc = descricoes_estoque_dict.get(cod_est_limpo, "")
                 itens_filtrados_temp.append((cod_est_limpo, desc, est_val, False, 0, -est_val, []))
     else:
-        # Para TODOS, FALTAS e SOBRAS, unimos todos os códigos presentes em estoque ou contados
         todos_codigos = set(estoques_dict.keys()).union(set(locais_por_produto.keys()))
         for cod_est_limpo in todos_codigos:
             est_val = estoques_dict.get(cod_est_limpo, 0)
@@ -160,7 +157,8 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             if tipo_filtro == "TODOS":
                 incluir = True
             elif tipo_filtro == "FALTAS":
-                if divergencia_val < 0:
+                # Faltas: apenas itens com divergência negativa real (exclui itens não contados / zerados na contagem)
+                if tem_na_comptar and divergencia_val < 0:
                     incluir = True
             elif tipo_filtro == "SOBRAS":
                 if divergencia_val > 0:
@@ -305,7 +303,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (BLINDADO CONTRA RELATÓRIO EM BRANCO)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM FILTRO DE FALTAS AJUSTADO)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -425,7 +423,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
             if tipo_filtro == "TODOS":
                 incluir = True
             elif tipo_filtro == "FALTAS":
-                if divergencia_val < 0:
+                if tem_na_comptar and divergencia_val < 0:
                     incluir = True
             elif tipo_filtro == "SOBRAS":
                 if divergencia_val > 0:
