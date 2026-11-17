@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import A3, landscape  # ⚡ Alterado para A3 (largura ideal para muitos locais)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -176,7 +176,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
     ws_saldo.views.sheetView[0].showGridLines = True
     
     ws_saldo.page_setup.orientation = ws_saldo.ORIENTATION_LANDSCAPE
-    ws_saldo.page_setup.paperSize = ws_saldo.PAPERSIZE_A4
+    ws_saldo.page_setup.paperSize = ws_saldo.PAPERSIZE_A3  # Também ajustado para A3 no Excel
     ws_saldo.sheet_properties.pageSetUpPr.fitToPage = True
     ws_saldo.page_setup.fitToWidth = 1
     ws_saldo.page_setup.fitToHeight = 0
@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (ESTRATÉGIA INTELIGENTE DE LARGURAS)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (PAPEL A3 PAISAGEM PARA SUPORTAR MUITOS LOCAIS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -446,27 +446,29 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     max_locais_encontrados = max(locais_com_contagem) if locais_com_contagem else 1
     
     buffer = io.BytesIO()
+    
+    # ⚡ ⚡ MUDANÇA CRUCIAL: Utilizando A3 em Paisagem (1190.55 x 841.89 pt) para dar largura de sobra para os 15+ locais
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=landscape(letter),
-        rightMargin=28,
-        leftMargin=28,
-        topMargin=18,
+        pagesize=landscape(A3),
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=20,
         bottomMargin=28
     )
     
     styles = getSampleStyleSheet()
-    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor('#1F4E78'))
+    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#1F4E78'))
     
-    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
+    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=5.5, leading=6.5, textColor=colors.white, alignment=1)
     
-    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.3, leading=6.3, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
+    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.5, leading=8.5, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
-    story.append(Spacer(1, 3))
+    story.append(Spacer(1, 4))
     
     headers_pdf = ["Código", "Descrição", "EST.", "COMP.", "DIVERG."]
     for i in range(1, max_locais_encontrados + 1):
@@ -525,21 +527,22 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    largura_util = 792 - 56
+    # Largura útil total da folha A3 em paisagem (1190.55 - 72 pt de margens = 1118.55 pt)
+    largura_util = 1190.55 - 72
     
-    # ⚡ 1. Tamanhos fixos otimizados e enxutos para Código, Descrição, Estoque, Comptar e Divergência
-    largura_codigo = 42.0
+    # Tamanhos fixos confortáveis para as colunas iniciais
+    largura_codigo = 55.0
     
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(95.0, min(float(max_len_desc * 3.8), 240.0))
+    largura_desc = max(140.0, min(float(max_len_desc * 4.5), 320.0))
     
-    largura_est = 22.0     # Enxuto
-    largura_comp = 22.0    # Enxuto
-    largura_div = 24.0     # Enxuto
+    largura_est = 30.0
+    largura_comp = 30.0
+    largura_div = 35.0
     
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     
-    # ⚡ 2. Todo o restante do espaço útil da folha é dedicado de forma flexível e inteligente para frente (Contagens e Locais)
+    # Espaço restante amplo para as colunas de contagem e locais
     largura_restante_total = largura_util - largura_fixa_inicial
     
     pesos_colunas = []
@@ -551,10 +554,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     soma_pesos = sum(pesos_colunas) if sum(pesos_colunas) > 0 else 1
     col_widths = [largura_codigo, largura_desc, largura_est, largura_comp, largura_div]
     
-    # ⚡ 3. Ajuste automático proporcional para cada coluna de contagem e local conforme o tamanho real dos dados
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 22.0))
+        col_widths.append(max(L_calc, 28.0))  # Largura mínima generosa para evitar qualquer quebra
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -569,8 +571,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         ('BACKGROUND', (idx_col_loc1, 1), (idx_col_loc1, -1), colors.HexColor('#F1F5F9')),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.8),
-        ('TOPPADDING', (0, 0), (-1, -1), 0.8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1.0),
+        ('TOPPADDING', (0, 0), (-1, -1), 1.0),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#000000')),
     ]))
     
@@ -718,7 +720,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Formato A3 Otimizado)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
