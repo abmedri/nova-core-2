@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
-from reportlab.lib.pagesizes import letter, landscape  # ⚡ Retornando para A4 / Letter em Paisagem
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO PARA PAPEL A4 (MUITOS LOCAIS)
+# GERADOR DE PDF DE CONFERÊNCIA - ULTRA DENSIDADE A4 (MARGENS DE 14 PT)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -330,28 +330,28 @@ class NumberedCanvas(canvas.Canvas):
         super().save()
     def draw_page_decorations(self, page_count):
         self.saveState()
-        self.setFont("Helvetica", 7)
+        self.setFont("Helvetica", 6.5)
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 20  # Margem compacta de 20 pt para maximizar o espaço útil no A4
+        margem = 14  # Margem ultracompacta para maximizar o aproveitamento horizontal no A4
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
-        self.line(margem, 20, largura_pagina - margem, 20)
+        self.line(margem, 18, largura_pagina - margem, 18)
         
         caminho_brasao = "brasao_sem_fundo.png" if os.path.exists("brasao_sem_fundo.png") else ("1000352084.jpg" if os.path.exists("1000352084.jpg") else None)
         if caminho_brasao:
             try:
-                self.drawImage(caminho_brasao, margem, 5, width=40, height=12, preserveAspectRatio=True, mask='auto')
+                self.drawImage(caminho_brasao, margem, 4, width=38, height=11, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
                 
         texto_esquerda = "GRUPO KMB // Auditoria Patrimonial • Exatidão • Controle • Eficiência"
-        self.drawString(margem + 45, 9, texto_esquerda)
+        self.drawString(margem + 42, 8, texto_esquerda)
         
         texto_pagina = f"Página {self._pageNumber} de {page_count}"
-        self.drawRightString(largura_pagina - margem, 9, texto_pagina)
+        self.drawRightString(largura_pagina - margem, 8, texto_pagina)
         self.restoreState()
 
 
@@ -447,24 +447,24 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     buffer = io.BytesIO()
     
-    # ⚡ Folha A4 em Paisagem rigorosamente calibrada com margens de 20 pt (largura útil = 752 pt)
+    # ⚡ Margens laterais fixadas em 14 pt (largura útil ampliada para 764 pt no A4)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=20,
-        leftMargin=20,
-        topMargin=15,
-        bottomMargin=25
+        rightMargin=14,
+        leftMargin=14,
+        topMargin=12,
+        bottomMargin=22
     )
     
     styles = getSampleStyleSheet()
-    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1F4E78'))
+    estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=8.0, textColor=colors.HexColor('#1F4E78'))
     
-    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
+    estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.0, leading=5.0, textColor=colors.white, alignment=1)
     
-    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.0, leading=7.0, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
+    estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=6.0, leading=7.0, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=5.5, leading=6.5, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=4.5, leading=5.5, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
@@ -527,22 +527,22 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil real do A4 paisagem com margens de 20 pt (792 - 40 = 752 pt)
-    largura_util = 752.0
+    # Largura útil real com margens de 14 pt cada (792 - 28 = 764 pt)
+    largura_util = 764.0
     
-    # ⚡ 1. Tamanhos fixos enxutos e rigorosos (Código, Descrição otimizada, Estoque, Comptar e Divergência)
-    largura_codigo = 40.0
+    # ⚡ Larguras fixas ultra-enxutas para maximizar o espaço das colunas de locais
+    largura_codigo = 38.0
     
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(80.0, min(float(max_len_desc * 3.0), 160.0))  # Enxugado para garantir espaço para os locais
+    largura_desc = max(75.0, min(float(max_len_desc * 2.8), 145.0))
     
-    largura_est = 20.0
-    largura_comp = 20.0
-    largura_div = 24.0
+    largura_est = 18.0
+    largura_comp = 18.0
+    largura_div = 22.0
     
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     
-    # ⚡ 2. O restante exato do espaço útil é distribuído automaticamente para as colunas de contagem e locais
+    # Todo o resto da folha A4 dedicado inteiramente às contagens e locais
     largura_restante_total = largura_util - largura_fixa_inicial
     
     pesos_colunas = []
@@ -556,7 +556,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 18.0))  # Largura proporcional dinâmica adaptada para caber no A4
+        col_widths.append(max(L_calc, 15.0))  # Mínimo calibrado para caber todos os locais na folha A4
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -571,8 +571,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         ('BACKGROUND', (idx_col_loc1, 1), (idx_col_loc1, -1), colors.HexColor('#F1F5F9')),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.8),
-        ('TOPPADDING', (0, 0), (-1, -1), 0.8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.6),
+        ('TOPPADDING', (0, 0), (-1, -1), 0.6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#000000')),
     ]))
     
@@ -720,7 +720,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF (Otimizado para Papel A4)")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Ultra Compacto A4)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
