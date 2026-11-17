@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (FONTES AUMENTADAS + LARGURAS MINIMAS AMPLIADAS)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGENS MÍNIMAS DE SEGURANÇA)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -334,7 +334,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 10
+        margem = 14  # Margem ajustada para o rodapé coincidir com as margens do documento
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -446,11 +446,13 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     max_locais_encontrados = max(locais_com_contagem) if locais_com_contagem else 1
     
     buffer = io.BytesIO()
+    
+    # 🛡️ Margens esquerda e direita definidas para 24 pt (garantindo margem mínima de respiro nas extremidades)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=14,
-        leftMargin=14,
+        rightMargin=24,
+        leftMargin=24,
         topMargin=18,
         bottomMargin=28
     )
@@ -526,7 +528,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    largura_util = 792 - 28
+    # Largura útil considerando as margens de 24 pt de cada lado (792 - 48 = 744 pt)
+    largura_util = 792 - 48
     largura_codigo = 42
     
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
@@ -550,7 +553,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        # ⚡ Largura mínima ampliada de 16.0 para 24.0 para evitar quebras de linha nas contagens/locais
         col_widths.append(max(L_calc, 24.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
