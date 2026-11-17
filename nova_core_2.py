@@ -1,5 +1,5 @@
 # ====================================================================================
-# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA AJUSTADO)
+# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA COMPLETO)
 # ====================================================================================
 import os
 import io
@@ -59,7 +59,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA (COM FILTRO DE FALTAS AJUSTADO)
+# GERADOR DO EXCEL DE CONFERÊNCIA ( COM AUTOEXPANSÃO DE COLUNAS E BORDAS PRETAS )
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -157,7 +157,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             if tipo_filtro == "TODOS":
                 incluir = True
             elif tipo_filtro == "FALTAS":
-                # Faltas: apenas itens com divergência negativa real (exclui itens não contados / zerados na contagem)
                 if tem_na_comptar and divergencia_val < 0:
                     incluir = True
             elif tipo_filtro == "SOBRAS":
@@ -296,6 +295,17 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 
+    # 📏 Bloco de autoajuste dinâmico de largura das colunas restabelecido
+    for col in ws_saldo.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row >= 4 and cell.value is not None:
+                val_str = str(cell.value)
+                if not val_str.startswith("="):
+                    max_len = max(max_len, len(val_str))
+        ws_saldo.column_dimensions[col_letter].width = max(max_len + 2, 8)
+                
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -303,7 +313,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM FILTRO DE FALTAS AJUSTADO)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
