@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (DESCRIÇÃO -2 PT E ESPAÇOS EM BRANCO REMOVIDOS)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (SEM QUEBRA DE LINHA NAS CONTAGENS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -460,7 +460,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
     
-    # ⚡ FONTES AJUSTADAS: Código (7.0 pt), Centro/Contagens (6.5 pt), Descrição reduzida em -2 pt (3.8 pt)
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=3.8, leading=4.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
@@ -550,8 +549,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        # ⚡ Largura mínima ajustada para 20.0 para eliminar excesso de espaços em branco sem quebrar linhas
-        col_widths.append(max(L_calc, 20.0))
+        # ⚡ Largura mínima ajustada para 24.0 para garantir que nenhuma contagem quebre linha
+        col_widths.append(max(L_calc, 24.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
