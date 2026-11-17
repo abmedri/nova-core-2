@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (FONTES AUMENTADAS EM +2 PT)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (FONTES AUMENTADAS + LARGURAS MINIMAS AMPLIADAS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -460,7 +460,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
     
-    # ⚡ FONTES AUMENTADAS EM +2 PT PARA CADA COLUNA SOLICITADA:
+    # FONTES AUMENTADAS EM +2 PT:
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.8, leading=6.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
@@ -529,7 +529,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     largura_util = 792 - 28
     largura_codigo = 42
     
-    # 🛡️ Fator multiplicador 4.2 e teto em 250 pt para descrições longas
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
     largura_desc = max(110.0, min(float(max_len_desc * 4.2), 250.0))
     
@@ -551,7 +550,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 16.0))
+        # ⚡ Largura mínima ampliada de 16.0 para 24.0 para evitar quebras de linha nas contagens/locais
+        col_widths.append(max(L_calc, 24.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -559,7 +559,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     idx_col_c1 = 5
     idx_col_loc1 = 5 + max_locais_encontrados
     
-    # 🛡️ Grid com bordas pretas puras (#000000)
     tabela_pdf.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E78')),
         ('BACKGROUND', (idx_col_divergencia, 1), (idx_col_divergencia, -1), colors.HexColor('#D9D9D9')),
