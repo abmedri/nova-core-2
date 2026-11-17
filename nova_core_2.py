@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (SEM ESPAÇOS BRANCOS NA DESCRIÇÃO)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (DESCRIÇÃO AUMENTADA EM +1.5 PT)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -462,7 +462,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=3.8, leading=4.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
+    
+    # ⚡ Descrição aumentada em +1.5 pt (passando de 3.8 pt para 5.3 pt, com leading 6.3 pt)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.3, leading=6.3, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
@@ -528,9 +530,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     largura_util = 792 - 56
     largura_codigo = 42
     
-    # ⚡ Fator multiplicador otimizado (3.3 em vez de 4.2) e mínimo de 85 pt para eliminar espaços brancos na descrição
+    # ⚡ Fator ajustado proporcionalmente (3.8) para comportar perfeitamente a fonte de 5.3 pt sem quebrar nem sobrar espaço em branco
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(85.0, min(float(max_len_desc * 3.3), 220.0))
+    largura_desc = max(95.0, min(float(max_len_desc * 3.8), 240.0))
     
     largura_est = 26
     largura_comp = 26
