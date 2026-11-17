@@ -302,7 +302,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA - BLINDAGEM CONTRA QUEBRA DE NÚMEROS (A4)
+# GERADOR DE PDF DE CONFERÊNCIA - CORREÇÃO DE LARGURAS FIXAS (A4)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -324,7 +324,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 10  # Margem mínima de 10 pt para liberar o máximo de espaço horizontal útil
+        margem = 10
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -437,7 +437,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     buffer = io.BytesIO()
     
-    # ⚡ Margens fixadas em 10 pt (largura útil total de 772 pt no A4 paisagem)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
@@ -452,9 +451,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=3.8, leading=4.8, textColor=colors.white, alignment=1)
     
-    # ⚡ Fonte reduzida e otimizada (4.5 pt) para os números e textos ficarem perfeitamente confortáveis na horizontal
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=4.5, leading=5.5, textColor=colors.HexColor('#111827'), alignment=1)
+    estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=4.2, leading=5.2, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
@@ -519,16 +517,16 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil total de 772 pt
     largura_util = 772.0
     
     largura_codigo = 34.0
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(65.0, min(float(max_len_desc * 2.4), 125.0))
+    largura_desc = max(60.0, min(float(max_len_desc * 2.2), 115.0))
     
-    largura_est = 15.0
-    largura_comp = 15.0
-    largura_div = 18.0
+    # ⚡ Larguras fixas aumentadas e blindadas para EST., COMP. e DIVERG. (acima de 22-26 pt para nunca quebrar números grandes ou negativos)
+    largura_est = 22.0
+    largura_comp = 22.0
+    largura_div = 26.0
     
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     largura_restante_total = largura_util - largura_fixa_inicial
@@ -544,8 +542,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        # ⚡ Largura mínima garantida de 19 pt por coluna numérica, impedindo qualquer quebra ou empilhamento vertical
-        col_widths.append(max(L_calc, 19.0))
+        col_widths.append(max(L_calc, 18.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -709,7 +706,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF (Blindado contra Empilhamento A4)")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Larguras Corrigidas A4)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
