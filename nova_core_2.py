@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (SEM QUEBRA DE LINHA NAS CONTAGENS)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (SEM ESPAÇOS BRANCOS NA DESCRIÇÃO)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -528,8 +528,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     largura_util = 792 - 56
     largura_codigo = 42
     
+    # ⚡ Fator multiplicador otimizado (3.3 em vez de 4.2) e mínimo de 85 pt para eliminar espaços brancos na descrição
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
-    largura_desc = max(110.0, min(float(max_len_desc * 4.2), 250.0))
+    largura_desc = max(85.0, min(float(max_len_desc * 3.3), 220.0))
     
     largura_est = 26
     largura_comp = 26
@@ -549,7 +550,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        # ⚡ Largura mínima ajustada para 24.0 para garantir que nenhuma contagem quebre linha
         col_widths.append(max(L_calc, 24.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
