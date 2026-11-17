@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGEM EQUILIBRADA DE 28 PT)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (DESCRIÇÃO -2 PT E ESPAÇOS EM BRANCO REMOVIDOS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -334,7 +334,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 28  # Margem perfeitamente equilibrada e alinhada
+        margem = 28
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -446,8 +446,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     max_locais_encontrados = max(locais_com_contagem) if locais_com_contagem else 1
     
     buffer = io.BytesIO()
-    
-    # 🛡️ Margem lateral de 28 pt (espaço ideal para respiro sem apertar as colunas)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
@@ -462,10 +460,10 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=4.5, leading=5.5, textColor=colors.white, alignment=1)
     
-    # FONTES AUMENTADAS EM +2 PT:
+    # ⚡ FONTES AJUSTADAS: Código (7.0 pt), Centro/Contagens (6.5 pt), Descrição reduzida em -2 pt (3.8 pt)
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
-    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.8, leading=6.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
+    estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=3.8, leading=4.8, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
     story.append(Paragraph(f"<b>GRUPO KMB // RELATÓRIO DE CONFERÊNCIA ({tipo_filtro})</b> — LOJA: {numero_loja_input} | DATA: {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_titulo))
@@ -528,7 +526,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil considerando as margens de 28 pt de cada lado (792 - 56 = 736 pt)
     largura_util = 792 - 56
     largura_codigo = 42
     
@@ -553,8 +550,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        # ⚡ Largura mínima ampliada para 26.0 para garantir espaço de sobra para os locais
-        col_widths.append(max(L_calc, 26.0))
+        # ⚡ Largura mínima ajustada para 20.0 para eliminar excesso de espaços em branco sem quebrar linhas
+        col_widths.append(max(L_calc, 20.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
