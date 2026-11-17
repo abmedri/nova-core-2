@@ -295,16 +295,6 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 
-    for col in ws_saldo.columns:
-        max_len = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            if cell.row >= 4 and cell.value is not None:
-                val_str = str(cell.value)
-                if not val_str.startswith("="):
-                    max_len = max(max_len, len(val_str))
-        ws_saldo.column_dimensions[col_letter].width = max(max_len + 2, 8)
-                
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -312,7 +302,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA - PROTEÇÃO TOTAL CONTRA QUEBRA EM NÚMEROS (A4)
+# GERADOR DE PDF DE CONFERÊNCIA - CORREÇÃO DE EMPILHAMENTO VERTICAL (A4)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -334,7 +324,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 12  # Margem extremamente enxuta (12 pt) para dar o máximo de fôlego horizontal
+        margem = 12
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -447,7 +437,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     buffer = io.BytesIO()
     
-    # ⚡ Margens laterais de 12 pt (largura útil total de 768 pt no A4 paisagem)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
@@ -501,7 +490,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
             for i in range(max_locais_encontrados):
                 if i < len(locs_prod):
                     val_qtd_str = str(int(float(str(locs_prod[i][1]).replace(',', '.'))))
-                    contagens_vals.append(Paragraph(f"<nobr>{val_qtd_str}</nobr>", estilo_td_centro))
+                    # ⚡ Blindagem total contra qualquer empilhamento vertical usando <nobr> e substituindo espaços
+                    val_qtd_seguro = val_qtd_str.replace(' ', '&nbsp;')
+                    contagens_vals.append(Paragraph(f"<nobr>{val_qtd_seguro}</nobr>", estilo_td_centro))
                     max_chars_por_coluna[i] = max(max_chars_por_coluna[i], len(val_qtd_str))
                     
                     nome_loc_original = str(limpar_nome_local(locs_prod[i][0]))
@@ -527,12 +518,9 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil total de 768 pt
     largura_util = 768.0
     
-    # ⚡ Larguras fixas ultra-otimizadas
     largura_codigo = 36.0
-    
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
     largura_desc = max(70.0, min(float(max_len_desc * 2.6), 135.0))
     
@@ -541,7 +529,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     largura_div = 20.0
     
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
-    
     largura_restante_total = largura_util - largura_fixa_inicial
     
     pesos_colunas = []
@@ -555,7 +542,7 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 14.5))  # Largura mínima calculada sem permitir quebra nos números
+        col_widths.append(max(L_calc, 18.0))  # ⚡ Largura mínima ampliada para dar espaço perfeito aos números sem quebrar verticalmente
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
@@ -570,8 +557,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         ('BACKGROUND', (idx_col_loc1, 1), (idx_col_loc1, -1), colors.HexColor('#F1F5F9')),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0.5),
-        ('TOPPADDING', (0, 0), (-1, -1), 0.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1.0),  # ⚡ Padding vertical ajustado para evitar qualquer sobreposição
+        ('TOPPADDING', (0, 0), (-1, -1), 1.0),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#000000')),
     ]))
     
@@ -719,7 +706,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF (Proteção Anti-Quebra A4)")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Anti-Empilhamento A4)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
