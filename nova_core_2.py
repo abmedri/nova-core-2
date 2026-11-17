@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGENS MÍNIMAS DE SEGURANÇA)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (COM MARGENS LATERAIS AMPLIADAS DE 55 PT)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -334,7 +334,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor('#64748b'))
         
         largura_pagina, altura_pagina = self._pagesize
-        margem = 14  # Margem ajustada para o rodapé coincidir com as margens do documento
+        margem = 55  # Margem generosa alinhada com as margens de segurança do documento
         
         self.setStrokeColor(colors.HexColor('#000000'))
         self.setLineWidth(0.5)
@@ -447,12 +447,12 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     buffer = io.BytesIO()
     
-    # 🛡️ Margens esquerda e direita definidas para 24 pt (garantindo margem mínima de respiro nas extremidades)
+    # 🛡️ Margens esquerda e direita aumentadas para 55 pt (respiro perfeito e visível nas extremidades)
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=24,
-        leftMargin=24,
+        rightMargin=55,
+        leftMargin=55,
         topMargin=18,
         bottomMargin=28
     )
@@ -528,8 +528,8 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         linha_celulas.extend(locais_vals)
         dados_tabela.append(linha_celulas)
         
-    # Largura útil considerando as margens de 24 pt de cada lado (792 - 48 = 744 pt)
-    largura_util = 792 - 48
+    # Largura útil considerando as margens de 55 pt de cada lado (792 - 110 = 682 pt)
+    largura_util = 792 - 110
     largura_codigo = 42
     
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
