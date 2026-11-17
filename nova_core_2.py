@@ -1,12 +1,11 @@
 # ====================================================================================
-# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE CONFERÊNCIA OFICIAL)
+# ⚡ GRUPO KMB // PROTOCOLO J.A.R.V.I.S. - NOVA CORE 2 (MÓDULO DE PDF REESCRITO)
 # ====================================================================================
 import os
 import io
 import pandas as pd
 import streamlit as st
 
-# Dependências para planilhas e PDFs
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -59,7 +58,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA
+# GERADOR DO EXCEL DE CONFERÊNCIA (BASE OFICIAL DE REGRAS)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, tipo_filtro):
     wb = openpyxl.Workbook()
@@ -302,7 +301,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA - CORREÇÃO DE LARGURAS FIXAS (A4)
+# GERADOR DE PDF DE CONFERÊNCIA REESCRITO (A4 PAISAGEM COM LARGURAS BLINDADAS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -448,7 +447,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     styles = getSampleStyleSheet()
     estilo_titulo = ParagraphStyle('TituloPDF', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=8.0, textColor=colors.HexColor('#1F4E78'))
-    
     estilo_th = ParagraphStyle('TH_Auto', fontName='Helvetica-Bold', fontSize=3.8, leading=4.8, textColor=colors.white, alignment=1)
     
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=5.0, leading=6.0, textColor=colors.HexColor('#111827'), alignment=1)
@@ -523,10 +521,10 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
     largura_desc = max(60.0, min(float(max_len_desc * 2.2), 115.0))
     
-    # ⚡ Larguras fixas aumentadas e blindadas para EST., COMP. e DIVERG. (acima de 22-26 pt para nunca quebrar números grandes ou negativos)
-    largura_est = 22.0
-    largura_comp = 22.0
-    largura_div = 26.0
+    # Larguras fixas blindadas e generosas para as colunas numéricas de controle
+    largura_est = 24.0
+    largura_comp = 24.0
+    largura_div = 28.0
     
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     largura_restante_total = largura_util - largura_fixa_inicial
@@ -706,7 +704,7 @@ def main():
 
             data_atual_str = pd.Timestamp.now().strftime('%d.%m.%Y')
             st.markdown("---")
-            st.markdown("### 📄 2. Listas de Conferência em PDF (Larguras Corrigidas A4)")
+            st.markdown("### 📄 2. Listas de Conferência em PDF (Reescrito e Validado)")
             c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
             
             with c_pdf1:
