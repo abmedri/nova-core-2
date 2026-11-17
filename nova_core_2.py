@@ -312,7 +312,7 @@ def gerar_planilha_filtrada_kmb(df_localizacao, df_estoque, numero_loja_input, t
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (DESCRIÇÃO AUMENTADA EM +1.5 PT)
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (ESTRATÉGIA INTELIGENTE DE LARGURAS)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -462,8 +462,6 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     
     estilo_td_codigo = ParagraphStyle('TD_Codigo', fontName='Helvetica-Bold', fontSize=7.0, leading=8.0, textColor=colors.HexColor('#111827'), alignment=1)
     estilo_td_centro = ParagraphStyle('TD_Centro', fontName='Helvetica', fontSize=6.5, leading=7.5, textColor=colors.HexColor('#111827'), alignment=1)
-    
-    # ⚡ Descrição aumentada em +1.5 pt (passando de 3.8 pt para 5.3 pt, com leading 6.3 pt)
     estilo_td_esq = ParagraphStyle('TD_Esq', fontName='Helvetica', fontSize=5.3, leading=6.3, textColor=colors.HexColor('#111827'), alignment=0, leftIndent=0, firstLineIndent=0, rightIndent=0)
     
     story = []
@@ -528,17 +526,20 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
         dados_tabela.append(linha_celulas)
         
     largura_util = 792 - 56
-    largura_codigo = 42
     
-    # ⚡ Fator ajustado proporcionalmente (3.8) para comportar perfeitamente a fonte de 5.3 pt sem quebrar nem sobrar espaço em branco
+    # ⚡ 1. Tamanhos fixos otimizados e enxutos para Código, Descrição, Estoque, Comptar e Divergência
+    largura_codigo = 42.0
+    
     max_len_desc = max([len(str(item[1]).strip()) for item in itens_filtrados_temp]) if itens_filtrados_temp else 20
     largura_desc = max(95.0, min(float(max_len_desc * 3.8), 240.0))
     
-    largura_est = 26
-    largura_comp = 26
-    largura_div = 28
+    largura_est = 22.0     # Enxuto
+    largura_comp = 22.0    # Enxuto
+    largura_div = 24.0     # Enxuto
+    
     largura_fixa_inicial = largura_codigo + largura_desc + largura_est + largura_comp + largura_div
     
+    # ⚡ 2. Todo o restante do espaço útil da folha é dedicado de forma flexível e inteligente para frente (Contagens e Locais)
     largura_restante_total = largura_util - largura_fixa_inicial
     
     pesos_colunas = []
@@ -550,9 +551,10 @@ def gerar_pdf_conferencia_kmb(df_localizacao, df_estoque, numero_loja_input, tip
     soma_pesos = sum(pesos_colunas) if sum(pesos_colunas) > 0 else 1
     col_widths = [largura_codigo, largura_desc, largura_est, largura_comp, largura_div]
     
+    # ⚡ 3. Ajuste automático proporcional para cada coluna de contagem e local conforme o tamanho real dos dados
     for peso in pesos_colunas:
         L_calc = (peso / soma_pesos) * largura_restante_total
-        col_widths.append(max(L_calc, 24.0))
+        col_widths.append(max(L_calc, 22.0))
         
     tabela_pdf = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     
