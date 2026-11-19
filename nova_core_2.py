@@ -61,7 +61,7 @@ def limpar_nome_local(val):
 
 
 # ====================================================================================
-# BLOCO 2: GERADOR DE ETIQUETAS QR CODE KMB (A4 - 2 COLUNAS / 14 POR PÁGINA)
+# BLOCO 2: GERADOR DE ETIQUETAS QR CODE KMB
 # ====================================================================================
 def gerar_pdf_etiquetas_kmb(inicio, fim, caminho_brasao):
     buffer = io.BytesIO()
