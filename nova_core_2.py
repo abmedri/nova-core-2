@@ -5,6 +5,7 @@ import os
 import io
 import pandas as pd
 import streamlit as st
+import qrcode
 
 # Dependências para planilhas e PDFs
 import openpyxl
@@ -12,11 +13,12 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter, landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
 
 def processar_arquivo_upload(arquivo_carregado):
@@ -56,6 +58,110 @@ def limpar_nome_local(val):
     if s.endswith('.0'):
         s = s[:-2]
     return s
+
+
+# ====================================================================================
+# BLOCO 2: GERADOR DE ETIQUETAS QR CODE KMB (A4 - 2 COLUNAS / 14 POR PÁGINA)
+# ====================================================================================
+def gerar_pdf_etiquetas_kmb(inicio, fim, caminho_brasao):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    
+    # Medidas exatas do modelo: 2 colunas x 7 linhas = 14 etiquetas por página A4
+    margin_top = 38.0
+    row_height = 104.0
+    col_width = 272.0
+    col_lefts = [20.0, 303.0]
+    
+    w_qr = 96.0
+    w_num = 122.0
+    w_brasao = 54.0
+    
+    brasao_reader = None
+    if caminho_brasao and os.path.exists(caminho_brasao):
+        try:
+            brasao_reader = ImageReader(caminho_brasao)
+        except Exception:
+            brasao_reader = None
+
+    total_etiquetas = (fim - inicio) + 1
+    total_paginas = (total_etiquetas + 13) // 14
+
+    def desenhar_rodape(pagina_atual):
+        c.saveState()
+        c.setFont("Helvetica", 8.5)
+        c.setFillColorRGB(0.35, 0.35, 0.35)
+        text = f"Gerador de QrCode KMB  -  Página {pagina_atual} de {total_paginas}"
+        c.drawCentredString(A4[0] / 2.0, 18, text)
+        c.restoreState()
+
+    for idx, num in enumerate(range(inicio, fim + 1)):
+        pos_na_pagina = idx % 14
+        
+        if idx > 0 and pos_na_pagina == 0:
+            c.showPage()
+            
+        if pos_na_pagina == 0:
+            pagina_atual = (idx // 14) + 1
+            desenhar_rodape(pagina_atual)
+            
+        current_col = pos_na_pagina // 7
+        current_row = pos_na_pagina % 7
+        
+        x = col_lefts[current_col]
+        y = A4[1] - margin_top - ((current_row + 1) * row_height)
+        
+        x_qr = x
+        x_num = x_qr + w_qr
+        x_brasao = x_num + w_num
+        
+        # Bordas externas e divisórias internas
+        c.setStrokeColorRGB(0.15, 0.15, 0.15)
+        c.setLineWidth(0.8)
+        c.rect(x, y, col_width, row_height)
+        c.line(x_num, y, x_num, y + row_height)
+        c.line(x_brasao, y, x_brasao, y + row_height)
+        
+        # QR Code em memória apenas com o número formatado (sem prefixo)
+        str_num = f"{num:02d}"
+        texto_qr = str_num
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=1,
+        )
+        qr.add_data(texto_qr)
+        qr.make(fit=True)
+        img_qr = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_buf = io.BytesIO()
+        img_qr.save(qr_buf, format="PNG")
+        qr_buf.seek(0)
+        c.drawImage(ImageReader(qr_buf), x_qr + 5, y + 5, width=w_qr - 10, height=row_height - 10, preserveAspectRatio=True)
+        
+        # Número grande e encorpado preenchendo a célula central
+        c.setFillColorRGB(0, 0, 0)
+        if len(str_num) <= 2:
+            font_size = 74
+            y_offset = 26
+        elif len(str_num) == 3:
+            font_size = 54
+            y_offset = 19
+        else:
+            font_size = 42
+            y_offset = 15
+            
+        c.setFont("Helvetica-Bold", font_size)
+        c.drawCentredString(x_num + (w_num / 2.0), y + (row_height / 2.0) - y_offset, str_num)
+        
+        # Brasão na terceira coluna
+        if brasao_reader:
+            c.drawImage(brasao_reader, x_brasao + 3, y + 8, width=w_brasao - 6, height=row_height - 16, preserveAspectRatio=True, mask='auto')
+            
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 
 # ====================================================================================
@@ -632,6 +738,17 @@ def main():
         st.markdown("### **GRUPO KMB**")
         st.markdown("*Nova Core 2 • Geração de Conferência*")
         st.markdown("---")
+        
+        modo_operacao = st.radio(
+            "Modo de Operação:",
+            [
+                "Planilha & PDF de Conferência",
+                "Gerador de Etiquetas QR Code"
+            ],
+            key="radio_modo_operacao_nc2"
+        )
+        
+        st.markdown("---")
         if st.button("🔒 Encerrar Sessão (Sair)", use_container_width=True):
             st.session_state.autenticado = False
             st.rerun()
@@ -642,6 +759,40 @@ def main():
         <div style="color: #9ca3af; font-size: 0.85rem; margin-top: 4px;">MÓDULO EXCLUSIVO DE PLANILHA & PDF DE CONFERÊNCIA AUTOMATIZADA</div>
     </div>
     """, unsafe_allow_html=True)
+
+    if modo_operacao == "Gerador de Etiquetas QR Code":
+        st.markdown("### 🏷️ GERADOR DE ETIQUETAS QR CODE // PADRÃO A4 (14 POR PÁGINA)")
+        st.markdown("Gere etiquetas com QR Code, numeração encorpada e brasão oficial prontas para impressão em folha A4.")
+        
+        col_etq1, col_etq2 = st.columns(2)
+        with col_etq1:
+            num_inicio = st.number_input("Do número:", min_value=1, max_value=99999, value=1, step=1, key="etq_inicio")
+        with col_etq2:
+            num_fim = st.number_input("Ao número:", min_value=1, max_value=99999, value=60, step=1, key="etq_fim")
+            
+        if num_inicio > num_fim:
+            st.error("❌ O número inicial ('Do número') não pode ser maior que o número final ('Ao número').")
+        else:
+            total_etiquetas = (num_fim - num_inicio) + 1
+            total_paginas = (total_etiquetas + 13) // 14
+            st.info(f"📊 Serão geradas **{total_etiquetas} etiquetas** distribuídas em **{total_paginas} página(s) A4** (2 colunas × 7 linhas).")
+            
+            if st.button("⚙️ Gerar PDF de Etiquetas", use_container_width=True):
+                with st.spinner("Gerando etiquetas em alta definição..."):
+                    pdf_etiquetas_buf = gerar_pdf_etiquetas_kmb(int(num_inicio), int(num_fim), caminho_logo_tela)
+                    st.session_state["pdf_etiquetas_pronto"] = pdf_etiquetas_buf.getvalue()
+                    st.session_state["pdf_etiquetas_nome"] = f"Etiquetas_KMB_{int(num_inicio):02d}_a_{int(num_fim):02d}.pdf"
+                    
+            if "pdf_etiquetas_pronto" in st.session_state:
+                st.success(f"✅ Arquivo **{st.session_state['pdf_etiquetas_nome']}** pronto para impressão!")
+                st.download_button(
+                    label="📥 Baixar PDF de Etiquetas",
+                    data=st.session_state["pdf_etiquetas_pronto"],
+                    file_name=st.session_state["pdf_etiquetas_nome"],
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+        return
     
     st.markdown("### 📋 GERAÇÃO AUTOMATIZADA DE LISTAS DE CONFERÊNCIA")
     st.markdown("Insira o número da loja e carregue os arquivos abaixo para gerar as listas com todas as colunas preservadas em linha única:")
