@@ -18,38 +18,86 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 import streamlit as st
 
 
-def processar_arquivo_upload(arquivo_carregado):
-  nome = arquivo_carregado.name.lower()
+def limpar_colunas_duplicadas(df):
+  novas_colunas = []
+  contagem = {}
+  for col in df.columns:
+    col_str = str(col).strip()
+    if col_str in contagem:
+      contagem[col_str] += 1
+      novas_colunas.append(f"{col_str}_{contagem[col_str]}")
+    else:
+      contagem[col_str] = 0
+      novas_colunas.append(col_str)
+  df.columns = novas_colunas
+  return df
+
+
+@st.cache_data
+def processar_arquivo_upload(conteudo_bytes, nome_arquivo):
+  nome = nome_arquivo.lower()
   try:
-    conteudo_bytes = arquivo_carregado.getvalue()
-    arquivo_carregado_io = io.BytesIO(conteudo_bytes)
+    arquivo_carregado = io.BytesIO(conteudo_bytes)
     if nome.endswith(".csv"):
       for enc in ["utf-8", "latin-1", "cp1252", "iso-8859-1"]:
-        for sep in [";", ","]:
-          try:
-            arquivo_carregado_io.seek(0)
+        try:
+          arquivo_carregado.seek(0)
+          df = pd.read_csv(
+              arquivo_carregado, encoding=enc, sep=";", low_memory=False
+          )
+          if df.shape[1] <= 1:
+            arquivo_carregado.seek(0)
             df = pd.read_csv(
-                arquivo_carregado_io, encoding=enc, sep=sep, low_memory=False
+                arquivo_carregado, encoding=enc, sep=",", low_memory=False
             )
-            if df.shape[1] > 1:
-              return df, "Inventário processado com sucesso."
-          except Exception:
-            continue
+          df = limpar_colunas_duplicadas(df)
+          col_mapping = {}
+          for col in df.columns:
+            col_lower = col.lower().strip()
+            if "custo" in col_lower:
+              col_mapping[col] = "Custo (R$)"
+            elif "valor de ajuste" in col_lower:
+              col_mapping[col] = "Valor de Ajuste (R$)"
+            elif "valor de estoque" in col_lower:
+              col_mapping[col] = "Valor de Estoque (R$)"
+          df = df.rename(columns=col_mapping)
+          for col in df.columns:
+            if col.lower() not in [
+                "código do produto",
+                "codigo do produto",
+                "loja",
+                "inventario",
+                "descrição do produto",
+                "emb",
+                "local",
+                "data de abertura",
+                "data de finalização",
+                "tipo",
+            ]:
+              try:
+                serie_str = (
+                    df[col]
+                    .astype(str)
+                    .str.replace(".", "", regex=False)
+                    .str.replace(",", ".", regex=False)
+                )
+                conv_num = pd.to_numeric(serie_str, errors="coerce")
+                if conv_num.notna().sum() > 0:
+                  df[col] = conv_num
+              except Exception:
+                pass
+          return df, "Inventário processado com sucesso."
+        except Exception:
+          continue
       return None, "Erro: Não foi possível decodificar o ficheiro CSV."
     elif nome.endswith((".xls", ".xlsx")):
-      df = pd.read_excel(arquivo_carregado_io)
+      df = pd.read_excel(arquivo_carregado)
+      df = limpar_colunas_duplicadas(df)
       return df, "Excel processado com sucesso."
     else:
       return None, "Formato não suportado."
   except Exception as e:
     return None, "Erro ao processar ficheiro: " + str(e)
-
-
-def limpar_codigo(val):
-  s = str(val).strip()
-  if s.endswith(".0"):
-    s = s[:-2]
-  return s
 
 
 def limpar_nome_local(val):
@@ -99,9 +147,11 @@ def gerar_pdf_etiquetas_kmb(inicio, fim, caminho_brasao):
   for idx, num in enumerate(range(inicio, fim + 1)):
     pos_na_pagina = idx % 14
 
+    # Inicia nova página a cada 14 etiquetas (exceto na primeira)
     if idx > 0 and pos_na_pagina == 0:
       c.showPage()
 
+    # Desenha o rodapé assim que inicia a página
     if pos_na_pagina == 0:
       pagina_atual = (idx // 14) + 1
       desenhar_rodape(pagina_atual)
@@ -183,7 +233,7 @@ def gerar_pdf_etiquetas_kmb(inicio, fim, caminho_brasao):
 
 
 # ====================================================================================
-# GERADOR DO EXCEL DE CONFERÊNCIA
+# GERADOR DO EXCEL DE CONFERÊNCIA (COM BORDAS PRETAS NÍTIDAS)
 # ====================================================================================
 def gerar_planilha_filtrada_kmb(
     df_localizacao, df_estoque, numero_loja_input, tipo_filtro
@@ -201,6 +251,7 @@ def gerar_planilha_filtrada_kmb(
       start_color="D9D9D9", end_color="D9D9D9", fill_type="solid"
   )
 
+  # Borda fina preta (#000000) para garantir forte destaque na impressão
   borda_fina = Border(
       left=Side(style="thin", color="000000"),
       right=Side(style="thin", color="000000"),
@@ -216,7 +267,9 @@ def gerar_planilha_filtrada_kmb(
 
   col_loc = next(
       (c for c in df_localizacao.columns if "local" in c.lower()),
-      df_localizacao.columns[0],
+      df_localizacao.columns[2]
+      if len(df_localizacao.columns) > 2
+      else df_localizacao.columns[0],
   )
   col_cod_loc = next(
       (
@@ -224,11 +277,15 @@ def gerar_planilha_filtrada_kmb(
           for c in df_localizacao.columns
           if "codigo" in c.lower() or "cod" in c.lower()
       ),
-      df_localizacao.columns[0],
+      df_localizacao.columns[3]
+      if len(df_localizacao.columns) > 3
+      else df_localizacao.columns[0],
   )
   col_desc_loc = next(
       (c for c in df_localizacao.columns if "desc" in c.lower()),
-      df_localizacao.columns[0],
+      df_localizacao.columns[4]
+      if len(df_localizacao.columns) > 4
+      else df_localizacao.columns[0],
   )
   col_qtd_loc = next(
       (
@@ -236,7 +293,9 @@ def gerar_planilha_filtrada_kmb(
           for c in df_localizacao.columns
           if "qtd" in c.lower() or "quantidade" in c.lower()
       ),
-      df_localizacao.columns[0],
+      df_localizacao.columns[5]
+      if len(df_localizacao.columns) > 5
+      else df_localizacao.columns[0],
   )
 
   locais_por_produto = {}
@@ -245,15 +304,12 @@ def gerar_planilha_filtrada_kmb(
 
   for _, row in df_localizacao.iterrows():
     loc = limpar_nome_local(row.get(col_loc, ""))
-    cod = limpar_codigo(row.get(col_cod_loc, ""))
+    cod = str(row.get(col_cod_loc, "")).strip()
     desc = str(row.get(col_desc_loc, "")).strip()
     try:
-      qtd = int(float(str(row.get(col_qtd_loc, 0)).replace(",", ".")))
+      qtd = int(float(row.get(col_qtd_loc, 0)))
     except Exception:
       qtd = 0
-
-    if not cod or cod == "nan":
-      continue
 
     if cod not in locais_por_produto:
       locais_por_produto[cod] = []
@@ -264,44 +320,20 @@ def gerar_planilha_filtrada_kmb(
     soma_comptar_por_produto[cod] += qtd
 
   col_cod_est = next(
-      (
-          c
-          for c in df_estoque.columns
-          if "codigo" in c.lower() or "cod" in c.lower()
-      ),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "codigo" in c.lower()), "Codigo"
   )
   col_desc_est = next(
-      (c for c in df_estoque.columns if "desc" in c.lower()),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "desc" in c.lower()), "Descrição"
   )
   col_est = next(
-      (
-          c
-          for c in df_estoque.columns
-          if "estoque" in c.lower() or "saldo" in c.lower()
-      ),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "estoque" in c.lower()), "Estoque"
   )
 
-  estoques_dict = {}
-  descricoes_estoque_dict = {}
-  for _, row in df_estoque.iterrows():
-    cod_est = limpar_codigo(row.get(col_cod_est, ""))
-    if not cod_est or cod_est == "nan":
-      continue
-    desc_est = row.get(col_desc_est, "")
-    try:
-      val_est_raw = (
-          str(row.get(col_est, 0)).replace(".", "").replace(",", ".")
-      )
-      val_est = int(float(val_est_raw))
-    except Exception:
-      val_est = 0
-    estoques_dict[cod_est] = val_est
-    descricoes_estoque_dict[cod_est] = desc_est
-
-  codigos_estoque_set = set(estoques_dict.keys())
+  codigos_estoque_set = (
+      set(df_estoque[col_cod_est].astype(str).str.strip().values)
+      if col_cod_est in df_estoque.columns
+      else set()
+  )
   itens_filtrados_temp = []
 
   if tipo_filtro == "SEM_SALDO":
@@ -320,29 +352,29 @@ def gerar_planilha_filtrada_kmb(
             locs,
         ))
   elif tipo_filtro == "ZERADOS":
-    for cod_est_limpo, est_val in estoques_dict.items():
-      if cod_est_limpo not in locais_por_produto:
-        desc = descricoes_estoque_dict.get(cod_est_limpo, "")
-        itens_filtrados_temp.append(
-            (cod_est_limpo, desc, est_val, False, 0, -est_val, [])
-        )
+    for idx, row in df_estoque.iterrows():
+      cod = str(row.get(col_cod_est, "")).strip()
+      if cod not in locais_por_produto:
+        desc = row.get(col_desc_est, "")
+        try:
+          est = int(float(row.get(col_est, 0)))
+        except Exception:
+          est = 0
+        itens_filtrados_temp.append((cod, desc, est, False, 0, -est, []))
   else:
-    todos_codigos = set(estoques_dict.keys()).union(
-        set(locais_por_produto.keys())
-    )
-    for cod_est_limpo in todos_codigos:
-      est_val = estoques_dict.get(cod_est_limpo, 0)
-      desc = descricoes_estoque_dict.get(
-          cod_est_limpo, descricoes_comptar.get(cod_est_limpo, "")
-      )
-      locs_prod = locais_por_produto.get(cod_est_limpo, [])
+    for idx, row in df_estoque.iterrows():
+      cod = str(row.get(col_cod_est, "")).strip()
+      desc = str(row.get(col_desc_est, ""))
+      try:
+        est = int(float(row.get(col_est, 0)))
+      except Exception:
+        est = 0
+      locs_prod = locais_por_produto.get(cod, [])
       tem_na_comptar = len(locs_prod) > 0
       soma_comptar_val = (
-          soma_comptar_por_produto.get(cod_est_limpo, 0)
-          if tem_na_comptar
-          else 0
+          soma_comptar_por_produto.get(cod, 0) if tem_na_comptar else 0
       )
-      divergencia_val = soma_comptar_val - est_val
+      divergencia_val = soma_comptar_val - est
 
       incluir = False
       if tipo_filtro == "TODOS":
@@ -351,14 +383,14 @@ def gerar_planilha_filtrada_kmb(
         if tem_na_comptar and divergencia_val < 0:
           incluir = True
       elif tipo_filtro == "SOBRAS":
-        if divergencia_val > 0:
+        if tem_na_comptar and divergencia_val > 0:
           incluir = True
 
       if incluir:
         itens_filtrados_temp.append((
-            cod_est_limpo,
+            cod,
             desc,
-            est_val,
+            est,
             tem_na_comptar,
             soma_comptar_val,
             divergencia_val,
@@ -433,9 +465,15 @@ def gerar_planilha_filtrada_kmb(
 
   headers_saldo = ["Codigo", "Descrição", "Estoque", "COMPTAR", "DIVERGÊNCIA"]
   for i in range(1, max_locais_encontrados + 1):
-    headers_saldo.append("CONT. 1" if i == 1 else str(int(i)))
+    if i == 1:
+      headers_saldo.append("CONT. 1")
+    else:
+      headers_saldo.append(str(int(i)))
   for i in range(1, max_locais_encontrados + 1):
-    headers_saldo.append("Local 1" if i == 1 else str(int(i)))
+    if i == 1:
+      headers_saldo.append("Local 1")
+    else:
+      headers_saldo.append(str(int(i)))
 
   ws_saldo.row_dimensions[1].height = 24
   ws_saldo.row_dimensions[2].height = 20
@@ -473,11 +511,12 @@ def gerar_planilha_filtrada_kmb(
       contagens_vals = []
       for i in range(max_locais_encontrados):
         if i < len(locs_prod):
+          val_num = locs_prod[i][1]
           try:
-            val_num = str(locs_prod[i][1]).replace(",", ".")
-            contagens_vals.append(int(float(val_num)))
+            val_int = int(float(val_num))
+            contagens_vals.append(val_int)
           except Exception:
-            contagens_vals.append(locs_prod[i][1])
+            contagens_vals.append(val_num)
         else:
           contagens_vals.append("")
 
@@ -529,7 +568,7 @@ def gerar_planilha_filtrada_kmb(
         val_str = str(cell.value)
         if not val_str.startswith("="):
           max_len = max(max_len, len(val_str))
-    ws_saldo.column_dimensions[col_letter].width = max(max_len + 2, 8)
+    ws_saldo.column_dimensions[col_letter].width = max(max_len + 2, 7)
 
   buffer = io.BytesIO()
   wb.save(buffer)
@@ -538,7 +577,7 @@ def gerar_planilha_filtrada_kmb(
 
 
 # ====================================================================================
-# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO PARA PAPEL A4
+# GERADOR DE PDF DE CONFERÊNCIA OTIMIZADO (MULTIPLICADOR CORRIGIDO PARA 4.2)
 # ====================================================================================
 class NumberedCanvas(canvas.Canvas):
 
@@ -564,11 +603,11 @@ class NumberedCanvas(canvas.Canvas):
     self.setFillColor(colors.HexColor("#64748b"))
 
     largura_pagina, altura_pagina = self._pagesize
-    margem = 20
+    margem = 10
 
     self.setStrokeColor(colors.HexColor("#000000"))
     self.setLineWidth(0.5)
-    self.line(margem, 20, largura_pagina - margem, 20)
+    self.line(margem, 22, largura_pagina - margem, 22)
 
     caminho_brasao = (
         "brasao_sem_fundo.png"
@@ -580,9 +619,9 @@ class NumberedCanvas(canvas.Canvas):
         self.drawImage(
             caminho_brasao,
             margem,
-            5,
-            width=40,
-            height=12,
+            6,
+            width=45,
+            height=13,
             preserveAspectRatio=True,
             mask="auto",
         )
@@ -592,10 +631,10 @@ class NumberedCanvas(canvas.Canvas):
     texto_esquerda = (
         "GRUPO KMB // Auditoria Patrimonial • Exatidão • Controle • Eficiência"
     )
-    self.drawString(margem + 45, 9, texto_esquerda)
+    self.drawString(margem + 50, 10, texto_esquerda)
 
     texto_pagina = f"Página {self._pageNumber} de {page_count}"
-    self.drawRightString(largura_pagina - margem, 9, texto_pagina)
+    self.drawRightString(largura_pagina - margem, 10, texto_pagina)
     self.restoreState()
 
 
@@ -604,7 +643,9 @@ def gerar_pdf_conferencia_kmb(
 ):
   col_loc = next(
       (c for c in df_localizacao.columns if "local" in c.lower()),
-      df_localizacao.columns[0],
+      df_localizacao.columns[2]
+      if len(df_localizacao.columns) > 2
+      else df_localizacao.columns[0],
   )
   col_cod_loc = next(
       (
@@ -612,11 +653,15 @@ def gerar_pdf_conferencia_kmb(
           for c in df_localizacao.columns
           if "codigo" in c.lower() or "cod" in c.lower()
       ),
-      df_localizacao.columns[0],
+      df_localizacao.columns[3]
+      if len(df_localizacao.columns) > 3
+      else df_localizacao.columns[0],
   )
   col_desc_loc = next(
       (c for c in df_localizacao.columns if "desc" in c.lower()),
-      df_localizacao.columns[0],
+      df_localizacao.columns[4]
+      if len(df_localizacao.columns) > 4
+      else df_localizacao.columns[0],
   )
   col_qtd_loc = next(
       (
@@ -624,7 +669,9 @@ def gerar_pdf_conferencia_kmb(
           for c in df_localizacao.columns
           if "qtd" in c.lower() or "quantidade" in c.lower()
       ),
-      df_localizacao.columns[0],
+      df_localizacao.columns[5]
+      if len(df_localizacao.columns) > 5
+      else df_localizacao.columns[0],
   )
 
   locais_por_produto = {}
@@ -633,15 +680,12 @@ def gerar_pdf_conferencia_kmb(
 
   for _, row in df_localizacao.iterrows():
     loc = limpar_nome_local(row.get(col_loc, ""))
-    cod = limpar_codigo(row.get(col_cod_loc, ""))
+    cod = str(row.get(col_cod_loc, "")).strip()
     desc = str(row.get(col_desc_loc, "")).strip()
     try:
-      qtd = int(float(str(row.get(col_qtd_loc, 0)).replace(",", ".")))
+      qtd = int(float(row.get(col_qtd_loc, 0)))
     except Exception:
       qtd = 0
-
-    if not cod or cod == "nan":
-      continue
 
     if cod not in locais_por_produto:
       locais_por_produto[cod] = []
@@ -651,44 +695,20 @@ def gerar_pdf_conferencia_kmb(
     soma_comptar_por_produto[cod] += qtd
 
   col_cod_est = next(
-      (
-          c
-          for c in df_estoque.columns
-          if "codigo" in c.lower() or "cod" in c.lower()
-      ),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "codigo" in c.lower()), "Codigo"
   )
   col_desc_est = next(
-      (c for c in df_estoque.columns if "desc" in c.lower()),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "desc" in c.lower()), "Descrição"
   )
   col_est = next(
-      (
-          c
-          for c in df_estoque.columns
-          if "estoque" in c.lower() or "saldo" in c.lower()
-      ),
-      df_estoque.columns[0],
+      (c for c in df_estoque.columns if "estoque" in c.lower()), "Estoque"
   )
 
-  estoques_dict = {}
-  descricoes_estoque_dict = {}
-  for _, row in df_estoque.iterrows():
-    cod_est = limpar_codigo(row.get(col_cod_est, ""))
-    if not cod_est or cod_est == "nan":
-      continue
-    desc_est = row.get(col_desc_est, "")
-    try:
-      val_est_raw = (
-          str(row.get(col_est, 0)).replace(".", "").replace(",", ".")
-      )
-      val_est = int(float(val_est_raw))
-    except Exception:
-      val_est = 0
-    estoques_dict[cod_est] = val_est
-    descricoes_estoque_dict[cod_est] = desc_est
-
-  codigos_estoque_set = set(estoques_dict.keys())
+  codigos_estoque_set = (
+      set(df_estoque[col_cod_est].astype(str).str.strip().values)
+      if col_cod_est in df_estoque.columns
+      else set()
+  )
 
   itens_filtrados_temp = []
   if tipo_filtro == "SEM_SALDO":
@@ -707,29 +727,29 @@ def gerar_pdf_conferencia_kmb(
             locs,
         ))
   elif tipo_filtro == "ZERADOS":
-    for cod_est_limpo, est_val in estoques_dict.items():
-      if cod_est_limpo not in locais_por_produto:
-        desc = descricoes_estoque_dict.get(cod_est_limpo, "")
-        itens_filtrados_temp.append(
-            (cod_est_limpo, desc, est_val, False, 0, -est_val, [])
-        )
+    for idx, row in df_estoque.iterrows():
+      cod = str(row.get(col_cod_est, "")).strip()
+      if cod not in locais_por_produto:
+        desc = str(row.get(col_desc_est, ""))
+        try:
+          est = int(float(row.get(col_est, 0)))
+        except Exception:
+          est = 0
+        itens_filtrados_temp.append((cod, desc, est, False, 0, -est, []))
   else:
-    todos_codigos = set(estoques_dict.keys()).union(
-        set(locais_por_produto.keys())
-    )
-    for cod_est_limpo in todos_codigos:
-      est_val = estoques_dict.get(cod_est_limpo, 0)
-      desc = descricoes_estoque_dict.get(
-          cod_est_limpo, descricoes_comptar.get(cod_est_limpo, "")
-      )
-      locs_prod = locais_por_produto.get(cod_est_limpo, [])
+    for idx, row in df_estoque.iterrows():
+      cod = str(row.get(col_cod_est, "")).strip()
+      desc = str(row.get(col_desc_est, ""))
+      try:
+        est = int(float(row.get(col_est, 0)))
+      except Exception:
+        est = 0
+      locs_prod = locais_por_produto.get(cod, [])
       tem_na_comptar = len(locs_prod) > 0
       soma_comptar_val = (
-          soma_comptar_por_produto.get(cod_est_limpo, 0)
-          if tem_na_comptar
-          else 0
+          soma_comptar_por_produto.get(cod, 0) if tem_na_comptar else 0
       )
-      divergencia_val = soma_comptar_val - est_val
+      divergencia_val = soma_comptar_val - est
 
       incluir = False
       if tipo_filtro == "TODOS":
@@ -738,14 +758,14 @@ def gerar_pdf_conferencia_kmb(
         if tem_na_comptar and divergencia_val < 0:
           incluir = True
       elif tipo_filtro == "SOBRAS":
-        if divergencia_val > 0:
+        if tem_na_comptar and divergencia_val > 0:
           incluir = True
 
       if incluir:
         itens_filtrados_temp.append((
-            cod_est_limpo,
+            cod,
             desc,
-            est_val,
+            est,
             tem_na_comptar,
             soma_comptar_val,
             divergencia_val,
@@ -763,10 +783,10 @@ def gerar_pdf_conferencia_kmb(
   doc = SimpleDocTemplate(
       buffer,
       pagesize=landscape(letter),
-      rightMargin=20,
-      leftMargin=20,
-      topMargin=15,
-      bottomMargin=25,
+      rightMargin=14,
+      leftMargin=14,
+      topMargin=18,
+      bottomMargin=28,
   )
 
   styles = getSampleStyleSheet()
@@ -774,14 +794,14 @@ def gerar_pdf_conferencia_kmb(
       "TituloPDF",
       parent=styles["Heading1"],
       fontName="Helvetica-Bold",
-      fontSize=8.5,
+      fontSize=9,
       textColor=colors.HexColor("#1F4E78"),
   )
   estilo_th = ParagraphStyle(
       "TH_Auto",
       fontName="Helvetica-Bold",
-      fontSize=4.5,
-      leading=5.5,
+      fontSize=5.0,
+      leading=6.0,
       textColor=colors.white,
       alignment=1,
   )
@@ -789,29 +809,29 @@ def gerar_pdf_conferencia_kmb(
   estilo_td_codigo = ParagraphStyle(
       "TD_Codigo",
       fontName="Helvetica-Bold",
-      fontSize=6.5,
-      leading=7.5,
-      textColor=colors.HexColor("#111827"),
-      alignment=1,
-  )
-  estilo_td_centro = ParagraphStyle(
-      "TD_Centro",
-      fontName="Helvetica",
-      fontSize=6.0,
-      leading=7.0,
+      fontSize=5.5,
+      leading=6.5,
       textColor=colors.HexColor("#111827"),
       alignment=1,
   )
   estilo_td_esq = ParagraphStyle(
       "TD_Esq",
       fontName="Helvetica",
-      fontSize=5.0,
-      leading=6.0,
+      fontSize=5.5,
+      leading=6.5,
       textColor=colors.HexColor("#111827"),
       alignment=0,
       leftIndent=0,
       firstLineIndent=0,
       rightIndent=0,
+  )
+  estilo_td_negrito_centro = ParagraphStyle(
+      "TD_Negrito_Centro",
+      fontName="Helvetica-Bold",
+      fontSize=6.0,
+      leading=7.0,
+      textColor=colors.HexColor("#111827"),
+      alignment=1,
   )
 
   story = []
@@ -823,7 +843,7 @@ def gerar_pdf_conferencia_kmb(
           estilo_titulo,
       )
   )
-  story.append(Spacer(1, 2))
+  story.append(Spacer(1, 3))
 
   headers_pdf = ["Código", "Descrição", "EST.", "COMP.", "DIVERG."]
   for i in range(1, max_locais_encontrados + 1):
@@ -859,9 +879,9 @@ def gerar_pdf_conferencia_kmb(
     linha_celulas = [
         Paragraph(f"<nobr>{cod_formatado}</nobr>", estilo_td_codigo),
         Paragraph(f"<nobr>{desc_limpa}</nobr>", estilo_td_esq),
-        Paragraph(f"<nobr>{est}</nobr>", estilo_td_centro),
-        Paragraph(f"<nobr>{cel_comptar}</nobr>", estilo_td_centro),
-        Paragraph(f"<nobr>{cel_divergencia}</nobr>", estilo_td_centro),
+        Paragraph(f"<nobr>{est}</nobr>", estilo_td_negrito_centro),
+        Paragraph(f"<nobr>{cel_comptar}</nobr>", estilo_td_negrito_centro),
+        Paragraph(f"<nobr>{cel_divergencia}</nobr>", estilo_td_negrito_centro),
     ]
 
     contagens_vals = []
@@ -869,11 +889,9 @@ def gerar_pdf_conferencia_kmb(
     if tem_na_comptar:
       for i in range(max_locais_encontrados):
         if i < len(locs_prod):
-          val_qtd_str = str(
-              int(float(str(locs_prod[i][1]).replace(",", ".")))
-          )
+          val_qtd_str = str(int(float(locs_prod[i][1])))
           contagens_vals.append(
-              Paragraph(f"<nobr>{val_qtd_str}</nobr>", estilo_td_centro)
+              Paragraph(f"<nobr>{val_qtd_str}</nobr>", estilo_td_negrito_centro)
           )
           max_chars_por_coluna[i] = max(
               max_chars_por_coluna[i], len(val_qtd_str)
@@ -882,34 +900,44 @@ def gerar_pdf_conferencia_kmb(
           nome_loc_original = str(limpar_nome_local(locs_prod[i][0]))
           nome_loc_seguro = nome_loc_original.replace(" ", "&nbsp;")
           locais_vals.append(
-              Paragraph(f"<nobr>{nome_loc_seguro}</nobr>", estilo_td_centro)
+              Paragraph(
+                  f"<nobr>{nome_loc_seguro}</nobr>", estilo_td_negrito_centro
+              )
           )
           max_chars_por_coluna[max_locais_encontrados + i] = max(
               max_chars_por_coluna[max_locais_encontrados + i],
               len(nome_loc_original),
           )
         else:
-          contagens_vals.append(Paragraph("", estilo_td_centro))
-          locais_vals.append(Paragraph("", estilo_td_centro))
+          contagens_vals.append(Paragraph("", estilo_td_negrito_centro))
+          locais_vals.append(Paragraph("", estilo_td_negrito_centro))
     else:
       if tipo_filtro == "ZERADOS":
         contagens_vals = [
-            Paragraph("<nobr>0&nbsp;-&nbsp;Comptar</nobr>", estilo_td_centro)
-        ] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
+            Paragraph("<nobr>0&nbsp;-&nbsp;Comptar</nobr>", estilo_td_negrito_centro)
+        ] + [Paragraph("", estilo_td_negrito_centro)] * (
+            max_locais_encontrados - 1
+        )
         locais_vals = [
-            Paragraph("<nobr>Sem&nbsp;local</nobr>", estilo_td_centro)
-        ] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
+            Paragraph("<nobr>Sem&nbsp;local</nobr>", estilo_td_negrito_centro)
+        ] + [Paragraph("", estilo_td_negrito_centro)] * (
+            max_locais_encontrados - 1
+        )
         max_chars_por_coluna[0] = max(max_chars_por_coluna[0], 12)
         max_chars_por_coluna[max_locais_encontrados] = max(
             max_chars_por_coluna[max_locais_encontrados], 9
         )
       else:
         contagens_vals = [
-            Paragraph("<nobr>0</nobr>", estilo_td_centro)
-        ] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
+            Paragraph("<nobr>0</nobr>", estilo_td_negrito_centro)
+        ] + [Paragraph("", estilo_td_negrito_centro)] * (
+            max_locais_encontrados - 1
+        )
         locais_vals = [
-            Paragraph("<nobr>Sem&nbsp;local</nobr>", estilo_td_centro)
-        ] + [Paragraph("", estilo_td_centro)] * (max_locais_encontrados - 1)
+            Paragraph("<nobr>Sem&nbsp;local</nobr>", estilo_td_negrito_centro)
+        ] + [Paragraph("", estilo_td_negrito_centro)] * (
+            max_locais_encontrados - 1
+        )
         max_chars_por_coluna[0] = max(max_chars_por_coluna[0], 1)
         max_chars_por_coluna[max_locais_encontrados] = max(
             max_chars_por_coluna[max_locais_encontrados], 9
@@ -919,19 +947,19 @@ def gerar_pdf_conferencia_kmb(
     linha_celulas.extend(locais_vals)
     dados_tabela.append(linha_celulas)
 
-  largura_util = 752.0
+  largura_util = 792 - 28
 
-  largura_codigo = 40.0
+  largura_codigo = 45
   max_len_desc = (
       max([len(str(item[1]).strip()) for item in itens_filtrados_temp])
       if itens_filtrados_temp
       else 20
   )
-  largura_desc = max(80.0, min(float(max_len_desc * 3.0), 160.0))
+  largura_desc = max(110.0, min(float(max_len_desc * 4.2), 250.0))
 
-  largura_est = 20.0
-  largura_comp = 20.0
-  largura_div = 24.0
+  largura_est = 28
+  largura_comp = 28
+  largura_div = 30
 
   largura_fixa_inicial = (
       largura_codigo + largura_desc + largura_est + largura_comp + largura_div
@@ -988,8 +1016,8 @@ def gerar_pdf_conferencia_kmb(
           ),
           ("ALIGN", (0, 0), (-1, -1), "CENTER"),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("BOTTOMPADDING", (0, 0), (-1, -1), 0.8),
-          ("TOPPADDING", (0, 0), (-1, -1), 0.8),
+          ("BOTTOMPADDING", (0, 0), (-1, -1), 1.0),
+          ("TOPPADDING", (0, 0), (-1, -1), 1.0),
           ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#000000")),
       ])
   )
@@ -1189,176 +1217,175 @@ def main():
       st.info(
           "ℹ️ Informe o número da loja acima para liberar o envio dos arquivos."
       )
-  else:
-    numero_loja_ui = int(numero_loja_limpo)
+    return
 
-    col_up1, col_up2 = st.columns(2)
-    with col_up1:
-      arq_loc = st.file_uploader(
-          "1. Arquivo de Itens por Localização (ex: Itens_localizacao.csv)",
-          type=["csv", "xlsx", "xls"],
-          key="up_loc",
+  numero_loja_ui = int(numero_loja_limpo)
+
+  col_up1, col_up2 = st.columns(2)
+  with col_up1:
+    arq_loc = st.file_uploader(
+        "1. Arquivo de Itens por Localização (ex: Itens_localizacao.csv)",
+        type=["csv", "xlsx", "xls"],
+        key="up_loc",
+    )
+  with col_up2:
+    arq_est = st.file_uploader(
+        "2. Arquivo de Saldo de Estoque (ex: saldo-estoque.csv)",
+        type=["csv", "xlsx", "xls"],
+        key="up_est",
+    )
+
+  if arq_loc and arq_est:
+    df_loc_temp, msg1 = processar_arquivo_upload(
+        arq_loc.getvalue(), arq_loc.name
+    )
+    df_est_temp, msg2 = processar_arquivo_upload(
+        arq_est.getvalue(), arq_est.name
+    )
+
+    if df_loc_temp is not None and df_est_temp is not None:
+      st.success("✅ Arquivos carregados e validados com sucesso!")
+
+      st.markdown("---")
+      st.markdown("### 👁️ Pré-visualização na Tela")
+
+      buf_preview = gerar_planilha_filtrada_kmb(
+          df_loc_temp, df_est_temp, numero_loja_ui, "TODOS"
       )
-    with col_up2:
-      arq_est = st.file_uploader(
-          "2. Arquivo de Saldo de Estoque (ex: saldo-estoque.csv)",
-          type=["csv", "xlsx", "xls"],
-          key="up_est",
+      df_preview_exibir = pd.read_excel(
+          buf_preview, sheet_name=0, skiprows=3, dtype=str
+      ).fillna("")
+
+      cols_vistas = {}
+      novas_colunas = []
+      for c in df_preview_exibir.columns:
+        c_str = str(c).strip()
+        if "." in c_str and c_str.split(".")[0].isdigit():
+          c_str = c_str.split(".")[0]
+        if c_str in cols_vistas:
+          cols_vistas[c_str] += 1
+          novas_colunas.append(f"{c_str}_{cols_vistas[c_str]}")
+        else:
+          cols_vistas[c_str] = 0
+          novas_colunas.append(c_str)
+      df_preview_exibir.columns = novas_colunas
+
+      for col in df_preview_exibir.columns:
+        if "Descrição" not in col:
+          df_preview_exibir[col] = df_preview_exibir[col].apply(
+              lambda x: x[:-2] if isinstance(x, str) and x.endswith(".0") else x
+          )
+
+      st.dataframe(df_preview_exibir, use_container_width=True, height=420)
+
+      st.download_button(
+          label="📥 Baixar Pré-visualização em Excel (.xlsx)",
+          data=buf_preview,
+          file_name=f"Preview_SaldoLoja_Loja_{numero_loja_ui}.xlsx",
+          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          use_container_width=True,
       )
 
-    if arq_loc and arq_est:
-      df_loc_temp, msg1 = processar_arquivo_upload(arq_loc)
-      df_est_temp, msg2 = processar_arquivo_upload(arq_est)
+      st.markdown("---")
+      st.markdown("### 📥 1. Listas de Conferência em Excel (Ordem Alfabética)")
+      c_imp1, c_imp2, c_imp3, c_imp4 = st.columns(4)
 
-      if df_loc_temp is not None and df_est_temp is not None:
-        st.success("✅ Arquivos carregados e validados com sucesso!")
-
-        st.markdown("---")
-        st.markdown("### 👁️ Pré-visualização na Tela")
-
-        buf_preview = gerar_planilha_filtrada_kmb(
-            df_loc_temp, df_est_temp, numero_loja_ui, "TODOS"
+      with c_imp1:
+        buf_zerados = gerar_planilha_filtrada_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "ZERADOS"
         )
-        df_preview_exibir = pd.read_excel(
-            buf_preview, sheet_name=0, skiprows=3, dtype=str
-        ).fillna("")
-
-        cols_vistas = {}
-        novas_colunas = []
-        for c in df_preview_exibir.columns:
-          c_str = str(c).strip()
-          if "." in c_str and c_str.split(".")[0].isdigit():
-            c_str = c_str.split(".")[0]
-          if c_str in cols_vistas:
-            cols_vistas[c_str] += 1
-            novas_colunas.append(f"{c_str}_{cols_vistas[c_str]}")
-          else:
-            cols_vistas[c_str] = 0
-            novas_colunas.append(c_str)
-        df_preview_exibir.columns = novas_colunas
-
-        for col in df_preview_exibir.columns:
-          if "Descrição" not in col:
-            df_preview_exibir[col] = df_preview_exibir[col].apply(
-                lambda x: x[:-2]
-                if isinstance(x, str) and x.endswith(".0")
-                else x
-            )
-
-        st.dataframe(df_preview_exibir, use_container_width=True, height=420)
-
         st.download_button(
-            label="📥 Baixar Pré-visualização em Excel (.xlsx)",
-            data=buf_preview,
-            file_name=f"Preview_SaldoLoja_Loja_{numero_loja_ui}.xlsx",
+            "📥 Baixar Excel (Zerados)",
+            data=buf_zerados,
+            file_name=f"Excel_Zerados_Loja_{numero_loja_ui}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+      with c_imp2:
+        buf_faltas = gerar_planilha_filtrada_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "FALTAS"
+        )
+        st.download_button(
+            "📥 Baixar Excel (Faltas)",
+            data=buf_faltas,
+            file_name=f"Excel_Faltas_Loja_{numero_loja_ui}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+      with c_imp3:
+        buf_sobras = gerar_planilha_filtrada_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "SOBRAS"
+        )
+        st.download_button(
+            "📥 Baixar Excel (Sobras)",
+            data=buf_sobras,
+            file_name=f"Excel_Sobras_Loja_{numero_loja_ui}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+      with c_imp4:
+        buf_sem_saldo = gerar_planilha_filtrada_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "SEM_SALDO"
+        )
+        st.download_button(
+            "📥 Baixar Excel (Sem Saldo)",
+            data=buf_sem_saldo,
+            file_name=f"Excel_SemSaldo_Loja_{numero_loja_ui}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
 
-        st.markdown("---")
-        st.markdown(
-            "### 📥 1. Listas de Conferência em Excel (Ordem Alfabética)"
+      data_atual_str = pd.Timestamp.now().strftime("%d.%m.%Y")
+      st.markdown("---")
+      st.markdown("### 📄 2. Listas de Conferência em PDF (Otimizado para Papel A4)")
+      c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
+
+      with c_pdf1:
+        pdf_zerados = gerar_pdf_conferencia_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "ZERADOS"
         )
-        c_imp1, c_imp2, c_imp3, c_imp4 = st.columns(4)
-
-        with c_imp1:
-          buf_zerados = gerar_planilha_filtrada_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "ZERADOS"
-          )
-          st.download_button(
-              "📥 Baixar Excel (Zerados)",
-              data=buf_zerados,
-              file_name=f"Excel_Zerados_Loja_{numero_loja_ui}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True,
-          )
-        with c_imp2:
-          buf_faltas = gerar_planilha_filtrada_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "FALTAS"
-          )
-          st.download_button(
-              "📥 Baixar Excel (Faltas)",
-              data=buf_faltas,
-              file_name=f"Excel_Faltas_Loja_{numero_loja_ui}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True,
-          )
-        with c_imp3:
-          buf_sobras = gerar_planilha_filtrada_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "SOBRAS"
-          )
-          st.download_button(
-              "📥 Baixar Excel (Sobras)",
-              data=buf_sobras,
-              file_name=f"Excel_Sobras_Loja_{numero_loja_ui}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True,
-          )
-        with c_imp4:
-          buf_sem_saldo = gerar_planilha_filtrada_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "SEM_SALDO"
-          )
-          st.download_button(
-              "📥 Baixar Excel (Sem Saldo)",
-              data=buf_sem_saldo,
-              file_name=f"Excel_SemSaldo_Loja_{numero_loja_ui}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True,
-          )
-
-        data_atual_str = pd.Timestamp.now().strftime("%d.%m.%Y")
-        st.markdown("---")
-        st.markdown(
-            "### 📄 2. Listas de Conferência em PDF (Otimizado para Papel A4)"
+        st.download_button(
+            "📑 Baixar PDF (Zerados)",
+            data=pdf_zerados,
+            file_name=f"{numero_loja_ui}.{data_atual_str}.zerados.pdf",
+            mime="application/pdf",
+            use_container_width=True,
         )
-        c_pdf1, c_pdf2, c_pdf3, c_pdf4 = st.columns(4)
-
-        with c_pdf1:
-          pdf_zerados = gerar_pdf_conferencia_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "ZERADOS"
-          )
-          st.download_button(
-              "📑 Baixar PDF (Zerados)",
-              data=pdf_zerados,
-              file_name=f"{numero_loja_ui}.{data_atual_str}.zerados.pdf",
-              mime="application/pdf",
-              use_container_width=True,
-          )
-        with c_pdf2:
-          pdf_faltas = gerar_pdf_conferencia_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "FALTAS"
-          )
-          st.download_button(
-              "📑 Baixar PDF (Faltas)",
-              data=pdf_faltas,
-              file_name=f"{numero_loja_ui}.{data_atual_str}.faltas.pdf",
-              mime="application/pdf",
-              use_container_width=True,
-          )
-        with c_pdf3:
-          pdf_sobras = gerar_pdf_conferencia_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "SOBRAS"
-          )
-          st.download_button(
-              "📑 Baixar PDF (Sobras)",
-              data=pdf_sobras,
-              file_name=f"{numero_loja_ui}.{data_atual_str}.sobras.pdf",
-              mime="application/pdf",
-              use_container_width=True,
-          )
-        with c_pdf4:
-          pdf_sem_saldo = gerar_pdf_conferencia_kmb(
-              df_loc_temp, df_est_temp, numero_loja_ui, "SEM_SALDO"
-          )
-          st.download_button(
-              "📑 Baixar PDF (Sem Saldo)",
-              data=pdf_sem_saldo,
-              file_name=f"{numero_loja_ui}.{data_atual_str}.sem_saldo.pdf",
-              mime="application/pdf",
-              use_container_width=True,
-          )
-      else:
-        st.error("❌ Erro ao processar os arquivos.")
+      with c_pdf2:
+        pdf_faltas = gerar_pdf_conferencia_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "FALTAS"
+        )
+        st.download_button(
+            "📑 Baixar PDF (Faltas)",
+            data=pdf_faltas,
+            file_name=f"{numero_loja_ui}.{data_atual_str}.faltas.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+      with c_pdf3:
+        pdf_sobras = gerar_pdf_conferencia_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "SOBRAS"
+        )
+        st.download_button(
+            "📑 Baixar PDF (Sobras)",
+            data=pdf_sobras,
+            file_name=f"{numero_loja_ui}.{data_atual_str}.sobras.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+      with c_pdf4:
+        pdf_sem_saldo = gerar_pdf_conferencia_kmb(
+            df_loc_temp, df_est_temp, numero_loja_ui, "SEM_SALDO"
+        )
+        st.download_button(
+            "📑 Baixar PDF (Sem Saldo)",
+            data=pdf_sem_saldo,
+            file_name=f"{numero_loja_ui}.{data_atual_str}.sem_saldo.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    else:
+      st.error("❌ Erro ao processar os arquivos.")
 
 
 if __name__ == "__main__":
