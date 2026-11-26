@@ -4,6 +4,7 @@
 import io
 import os
 import openpyxl
+from openpyxl.chart import BarChart, Reference
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
