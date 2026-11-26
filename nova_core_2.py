@@ -5,6 +5,7 @@ import io
 import os
 import openpyxl
 from openpyxl.drawing.image import Image as OpenpyxlImage
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -1029,6 +1030,594 @@ def gerar_pdf_conferencia_kmb(
 
 
 # ====================================================================================
+# BLOCO 3: AUTOMAÇÃO DE RELATÓRIO DE INVENTÁRIO (MEMÓRIA, JUSTIFICAR & RESUMO)
+# ====================================================================================
+def _b5_ler_csv_inventario(uploaded_file):
+  """Lê o arquivo CSV exportado do sistema tratando codificação, separador e colunas monetárias."""
+  raw_bytes = uploaded_file.getvalue()
+  for enc in ["latin1", "cp1252", "utf-8-sig", "utf-8"]:
+    try:
+      df = pd.read_csv(io.BytesIO(raw_bytes), sep=";", encoding=enc)
+      if "Código do Produto" in df.columns:
+        for col in [
+            "Custo (R$)",
+            "Valor de Ajuste (R$)",
+            "Valor de Estoque (R$)",
+        ]:
+          if col in df.columns:
+            df[col] = (
+                pd.to_numeric(
+                    df[col]
+                    .astype(str)
+                    .str.replace(".", "", regex=False)
+                    .str.replace(",", ".", regex=False),
+                    errors="coerce",
+                )
+                .fillna(0.0)
+            )
+        return df
+    except Exception:
+      continue
+  raise ValueError(
+      "Não foi possível ler o CSV. Verifique se o separador é ';' e se a"
+      " coluna 'Código do Produto' existe."
+  )
+
+
+def _b5_ler_inventario_anterior(uploaded_file):
+  """Lê o arquivo CSV (ou Excel) do inventário anterior e retorna um dicionário {Código: Ajuste}."""
+  if uploaded_file is None:
+    return {}
+  raw_bytes = uploaded_file.getvalue()
+  nome_arq = str(getattr(uploaded_file, "name", "")).lower()
+
+  if nome_arq.endswith(".csv"):
+    df_ant = None
+    for enc in ["latin1", "cp1252", "utf-8-sig", "utf-8"]:
+      for sep in [";", ","]:
+        try:
+          temp = pd.read_csv(io.BytesIO(raw_bytes), sep=sep, encoding=enc)
+          if (
+              "Código do Produto" in temp.columns
+              and "Ajuste" in temp.columns
+          ):
+            df_ant = temp
+            break
+        except Exception:
+          continue
+      if df_ant is not None:
+        break
+    if df_ant is None:
+      raise ValueError(
+          "O arquivo CSV do inventário anterior precisa ter as colunas"
+          " 'Código do Produto' e 'Ajuste' (separador ';' ou ',')."
+      )
+  else:
+    xls = pd.ExcelFile(io.BytesIO(raw_bytes))
+    df_ant = pd.read_excel(io.BytesIO(raw_bytes), sheet_name=xls.sheet_names[0])
+    if (
+        "Código do Produto" not in df_ant.columns
+        or "Ajuste" not in df_ant.columns
+    ):
+      raise ValueError(
+          "O arquivo do inventário anterior precisa ter as colunas 'Código do"
+          " Produto' e 'Ajuste' na primeira aba."
+      )
+
+  df_ant = df_ant.drop_duplicates(subset=["Código do Produto"], keep="last")
+  return df_ant.set_index("Código do Produto")["Ajuste"].to_dict()
+
+
+def _b5_gerar_excel_memoria(df_atual, mapa_anterior, nome_arquivo_csv):
+  nome_aba_base = os.path.splitext(nome_arquivo_csv)[0][:31]
+
+  # Regra da aba JUSTIFICAR:
+  # Negativos (< 0), Sobras (> 0) ou Congelado == 0
+  condicao = (
+      (df_atual["Ajuste"] < 0)
+      | (df_atual["Ajuste"] > 0)
+      | (df_atual["Congelado"] == 0)
+  )
+  df_just = df_atual[condicao].copy()
+  df_just = df_just.sort_values(
+      by=["Ajuste", "Descrição do Produto"], ascending=[True, True]
+  ).reset_index(drop=True)
+
+  wb = openpyxl.Workbook()
+
+  # Paleta de estilos
+  navy_dark = "1E3A5F"
+  zebra_fill_hex = "F7FAFC"
+  border_gray = "CBD5E0"
+  total_fill_hex = "E2E8F0"
+  ant_header_fill = "FEF3C7"
+  ant_header_font = "92400E"
+  ant_cell_fill = "FFFBEB"
+
+  font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+  fill_header = PatternFill(
+      fill_type="solid", start_color=navy_dark, end_color=navy_dark
+  )
+  font_data = Font(name="Calibri", size=11, color="1A202C")
+  font_bold = Font(name="Calibri", size=11, bold=True, color="1A202C")
+  fill_zebra = PatternFill(
+      fill_type="solid", start_color=zebra_fill_hex, end_color=zebra_fill_hex
+  )
+  fill_total = PatternFill(
+      fill_type="solid", start_color=total_fill_hex, end_color=total_fill_hex
+  )
+
+  thin_border = Border(
+      left=Side(style="thin", color=border_gray),
+      right=Side(style="thin", color=border_gray),
+      top=Side(style="thin", color=border_gray),
+      bottom=Side(style="thin", color=border_gray),
+  )
+  total_border = Border(
+      top=Side(style="medium", color=navy_dark),
+      bottom=Side(style="medium", color=navy_dark),
+      left=Side(style="thin", color=border_gray),
+      right=Side(style="thin", color=border_gray),
+  )
+
+  # =========================================================================
+  # ABA 1: CÓPIA DO ARQUIVO CSV
+  # =========================================================================
+  ws_base = wb.active
+  ws_base.title = nome_aba_base
+
+  headers_base = list(df_atual.columns)
+  ws_base.append(headers_base)
+  for col_idx in range(1, len(headers_base) + 1):
+    c = ws_base.cell(1, col_idx)
+    c.font = font_header
+    c.fill = fill_header
+    c.alignment = Alignment(
+        horizontal="center", vertical="center", wrap_text=True
+    )
+    c.border = thin_border
+  ws_base.row_dimensions[1].height = 26
+
+  for row_data in df_atual.itertuples(index=False):
+    ws_base.append(list(row_data))
+
+  for r_idx in range(2, ws_base.max_row + 1):
+    for c_idx in range(1, ws_base.max_column + 1):
+      c = ws_base.cell(r_idx, c_idx)
+      c.font = font_data
+      c.border = thin_border
+      if r_idx % 2 == 1:
+        c.fill = fill_zebra
+      if c_idx in [1, 3, 4, 5, 6, 7, 13]:
+        c.alignment = Alignment(horizontal="center", vertical="center")
+      elif c_idx in [8, 9, 10]:
+        c.number_format = "R$ #,##0.00"
+        c.alignment = Alignment(horizontal="right", vertical="center")
+
+  ws_base.freeze_panes = "A2"
+  ws_base.auto_filter.ref = (
+      f"A1:{get_column_letter(ws_base.max_column)}{ws_base.max_row}"
+  )
+
+  larguras_base = [
+      18,
+      42,
+      8,
+      12,
+      11,
+      10,
+      18,
+      14,
+      19,
+      19,
+      36,
+      12,
+      13,
+      18,
+      22,
+      13,
+  ]
+  for i, w in enumerate(larguras_base[: ws_base.max_column], start=1):
+    ws_base.column_dimensions[get_column_letter(i)].width = w
+
+  # =========================================================================
+  # ABA 2: JUSTIFICAR
+  # =========================================================================
+  ws_just = wb.create_sheet(title="JUSTIFICAR")
+
+  headers_just = [
+      "Código do Produto",
+      "Descrição do Produto",
+      "Emb",
+      "Congelado",
+      "Digitado",
+      "Ajuste",
+      "Saldo em Estoque",
+      "Ajuste Inventario Anterior",
+      "JUSTIFICAR",
+      "LOGISTICA",
+  ]
+  ws_just.append(headers_just)
+
+  for col_idx in range(1, len(headers_just) + 1):
+    c = ws_just.cell(1, col_idx)
+    if col_idx == 8:
+      c.fill = PatternFill(
+          fill_type="solid", start_color=ant_header_fill, end_color=ant_header_fill
+      )
+      c.font = Font(name="Calibri", size=11, bold=True, color=ant_header_font)
+    else:
+      c.fill = fill_header
+      c.font = font_header
+    c.alignment = Alignment(
+        horizontal="center", vertical="center", wrap_text=True
+    )
+    c.border = thin_border
+  ws_just.row_dimensions[1].height = 28
+
+  max_base_row = ws_base.max_row
+  sheet_ref = f"'{nome_aba_base}'"
+
+  for idx, row in df_just.iterrows():
+    r_excel = idx + 2
+    cod = int(row["Código do Produto"])
+    ajuste_ant = mapa_anterior.get(cod, 0)
+    ajuste_ant = 0 if pd.isna(ajuste_ant) else int(ajuste_ant)
+
+    row_vals = [
+        cod,
+        (
+            f"=INDEX({sheet_ref}!$B$2:$B${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        (
+            f"=INDEX({sheet_ref}!$C$2:$C${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        (
+            f"=INDEX({sheet_ref}!$D$2:$D${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        (
+            f"=INDEX({sheet_ref}!$E$2:$E${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        (
+            f"=INDEX({sheet_ref}!$F$2:$F${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        (
+            f"=INDEX({sheet_ref}!$G$2:$G${max_base_row},"
+            f" MATCH(A{r_excel}, {sheet_ref}!$A$2:$A${max_base_row}, 0))"
+        ),
+        ajuste_ant,
+        None,
+        None,
+    ]
+    ws_just.append(row_vals)
+
+    for c_idx in range(1, 11):
+      cell = ws_just.cell(r_excel, c_idx)
+      cell.border = thin_border
+      if c_idx == 8:
+        cell.font = Font(
+            name="Calibri", size=11, bold=True, color=ant_header_font
+        )
+        cell.fill = PatternFill(
+            fill_type="solid", start_color=ant_cell_fill, end_color=ant_cell_fill
+        )
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+      else:
+        cell.font = font_data
+        if idx % 2 == 1:
+          cell.fill = fill_zebra
+        if c_idx in [1, 3, 4, 5, 6, 7]:
+          cell.alignment = Alignment(horizontal="center", vertical="center")
+        else:
+          cell.alignment = Alignment(horizontal="left", vertical="center")
+
+  total_row = ws_just.max_row + 1
+  ws_just.cell(total_row, 1, "TOTAL").font = font_bold
+  ws_just.cell(total_row, 1).alignment = Alignment(
+      horizontal="center", vertical="center"
+  )
+  ws_just.cell(
+      total_row, 2, f'=COUNTA(A2:A{total_row-1}) & " itens"'
+  ).font = font_bold
+
+  for c_idx in [4, 5, 6, 7, 8]:
+    col_let = get_column_letter(c_idx)
+    c = ws_just.cell(
+        total_row, c_idx, f"=SUM({col_let}2:{col_let}{total_row-1})"
+    )
+    c.font = font_bold
+    c.alignment = Alignment(horizontal="center", vertical="center")
+
+  for c_idx in range(1, 11):
+    cell = ws_just.cell(total_row, c_idx)
+    cell.fill = fill_total
+    cell.border = total_border
+
+  red_fill = PatternFill(
+      start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"
+  )
+  red_font = Font(color="991B1B", bold=True)
+  green_fill = PatternFill(
+      start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"
+  )
+  green_font = Font(color="166534", bold=True)
+
+  ws_just.conditional_formatting.add(
+      f"F2:F{total_row-1}",
+      CellIsRule(
+          operator="lessThan", formula=["0"], fill=red_fill, font=red_font
+      ),
+  )
+  ws_just.conditional_formatting.add(
+      f"F2:F{total_row-1}",
+      CellIsRule(
+          operator="greaterThan",
+          formula=["0"],
+          fill=green_fill,
+          font=green_font,
+      ),
+  )
+
+  dv_just = DataValidation(
+      type="list",
+      formula1=(
+          '"Furto / Perda,Erro de Contagem / Bipagem,Avaria /'
+          " Vencido,Divergência de Recebimento,Troca / Devolução não"
+          ' lançada,Produto sem saldo (Congelado 0),Outros"'
+      ),
+      allow_blank=True,
+  )
+  ws_just.add_data_validation(dv_just)
+  dv_just.add(f"I2:I{total_row-1}")
+
+  larguras_just = [18, 44, 8, 12, 11, 10, 18, 25, 32, 30]
+  for i, w in enumerate(larguras_just, start=1):
+    ws_just.column_dimensions[get_column_letter(i)].width = w
+
+  ws_just.freeze_panes = "A2"
+  ws_just.auto_filter.ref = f"A1:J{total_row-1}"
+
+  # =========================================================================
+  # ABA 3: RESUMO (Valores calculados em Python para funcionar em PC e Celular)
+  # =========================================================================
+  ws_res = wb.create_sheet(title="RESUMO")
+
+  loja_titulo = (
+      str(df_atual["Loja"].iloc[0])
+      if "Loja" in df_atual.columns and len(df_atual) > 0
+      else nome_aba_base
+  )
+  ws_res["A1"] = f"RESUMO DO INVENTÁRIO — {loja_titulo}"
+  ws_res["A1"].font = Font(
+      name="Calibri", size=13, bold=True, color=navy_dark
+  )
+  ws_res.merge_cells("A1:D1")
+
+  res_headers = ["Indicador", "Qtd. Itens", "Qtd. Unidades", "Valor (R$)"]
+  ws_res.append([])
+  ws_res.append(res_headers)
+  for c_idx in range(1, 5):
+    c = ws_res.cell(3, c_idx)
+    c.font = font_header
+    c.fill = fill_header
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    c.border = thin_border
+
+  sem_div_df = df_atual[df_atual["Ajuste"] == 0]
+  faltas_df = df_atual[df_atual["Ajuste"] < 0]
+  sobras_df = df_atual[df_atual["Ajuste"] > 0]
+  cong_zero_df = df_atual[df_atual["Congelado"] == 0]
+
+  val_est_col = (
+      "Valor de Estoque (R$)"
+      if "Valor de Estoque (R$)" in df_atual.columns
+      else None
+  )
+  val_aju_col = (
+      "Valor de Ajuste (R$)"
+      if "Valor de Ajuste (R$)" in df_atual.columns
+      else None
+  )
+
+  rows_resumo = [
+      (
+          "Total de SKUs Inventariados",
+          int(len(df_atual)),
+          int(df_atual["Digitado"].sum()),
+          round(float(df_atual[val_est_col].sum()), 2) if val_est_col else 0.0,
+      ),
+      (
+          "Itens sem Divergência (Ajuste = 0)",
+          int(len(sem_div_df)),
+          int(sem_div_df["Digitado"].sum()),
+          (
+              round(float(sem_div_df[val_est_col].sum()), 2)
+              if val_est_col
+              else 0.0
+          ),
+      ),
+      (
+          "Faltas (Ajuste Negativo)",
+          int(len(faltas_df)),
+          int(faltas_df["Ajuste"].sum()),
+          (
+              round(float(faltas_df[val_aju_col].sum()), 2)
+              if val_aju_col
+              else 0.0
+          ),
+      ),
+      (
+          "Sobras (Ajuste Positivo)",
+          int(len(sobras_df)),
+          int(sobras_df["Ajuste"].sum()),
+          (
+              round(float(sobras_df[val_aju_col].sum()), 2)
+              if val_aju_col
+              else 0.0
+          ),
+      ),
+      (
+          "Itens com Congelado = 0",
+          int(len(cong_zero_df)),
+          int(cong_zero_df["Digitado"].sum()),
+          (
+              round(float(cong_zero_df[val_est_col].sum()), 2)
+              if val_est_col
+              else 0.0
+          ),
+      ),
+      (
+          "Total de Itens na Aba JUSTIFICAR",
+          int(len(df_just)),
+          int(df_just["Ajuste"].sum()),
+          (
+              round(float(df_just[val_aju_col].sum()), 2)
+              if val_aju_col
+              else 0.0
+          ),
+      ),
+  ]
+
+  for idx, r_vals in enumerate(rows_resumo, start=4):
+    ws_res.append(list(r_vals))
+    for c_idx in range(1, 5):
+      cell = ws_res.cell(idx, c_idx)
+      cell.font = font_bold if idx == 9 else font_data
+      cell.border = thin_border
+      if idx == 9:
+        cell.fill = fill_total
+      elif idx % 2 == 1:
+        cell.fill = fill_zebra
+      if c_idx == 1:
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+      elif c_idx in [2, 3]:
+        cell.number_format = "#,##0"
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+      elif c_idx == 4:
+        cell.number_format = "R$ #,##0.00"
+        cell.alignment = Alignment(horizontal="right", vertical="center")
+
+  chart = BarChart()
+  chart.type = "col"
+  chart.style = 10
+  chart.title = "Divergências por Tipo (Qtd. de Itens)"
+  chart.y_axis.title = "Qtd. Itens"
+  chart.x_axis.title = "Categoria"
+  data_ref = Reference(ws_res, min_col=2, min_row=5, max_row=8)
+  cats_ref = Reference(ws_res, min_col=1, min_row=5, max_row=8)
+  chart.add_data(data_ref, titles_from_data=False)
+  chart.set_categories(cats_ref)
+  chart.legend = None
+  chart.width = 18
+  chart.height = 12
+  ws_res.add_chart(chart, "A12")
+
+  ws_res.column_dimensions["A"].width = 36
+  ws_res.column_dimensions["B"].width = 16
+  ws_res.column_dimensions["C"].width = 18
+  ws_res.column_dimensions["D"].width = 20
+
+  output_buffer = io.BytesIO()
+  wb.save(output_buffer)
+  output_buffer.seek(0)
+  return output_buffer, df_just
+
+
+def renderizar_bloco_5_justificar():
+  st.markdown("### 📦 AUTOMAÇÃO DE RELATÓRIO DE INVENTÁRIO (BLOCO 3)")
+  st.markdown(
+      "Faça o upload dos arquivos abaixo e clique no botão para gerar a"
+      " planilha Excel pronta para justificar."
+  )
+
+  col1, col2 = st.columns(2)
+
+  with col1:
+    arquivo_csv = st.file_uploader(
+        "1. Arquivo CSV do Inventário Atual (Obrigatório)",
+        type=["csv"],
+        help="Ex: 11021.23.11.2026.csv",
+        key="b5_arquivo_csv",
+    )
+
+  with col2:
+    arquivo_anterior = st.file_uploader(
+        "2. CSV do Inventário Anterior (Opcional)",
+        type=["csv", "xlsx", "xls"],
+        help="Para cruzar a coluna 'Ajuste Inventario Anterior'",
+        key="b5_arquivo_anterior",
+    )
+
+  st.divider()
+
+  if st.button(
+      "🚀 Gerar Relatório de Inventário",
+      type="primary",
+      use_container_width=True,
+      key="b5_btn_gerar",
+  ):
+    if arquivo_csv is None:
+      st.warning(
+          "⚠️ Por favor, faça o upload do arquivo CSV do inventário atual"
+          " primeiro."
+      )
+    else:
+      try:
+        with st.spinner("Processando arquivos e gerando planilha..."):
+          df_atual = _b5_ler_csv_inventario(arquivo_csv)
+          mapa_anterior = _b5_ler_inventario_anterior(arquivo_anterior)
+          excel_bytes, df_just = _b5_gerar_excel_memoria(
+              df_atual, mapa_anterior, arquivo_csv.name
+          )
+
+          df_preview = df_just[[
+              "Código do Produto",
+              "Descrição do Produto",
+              "Emb",
+              "Congelado",
+              "Digitado",
+              "Ajuste",
+              "Saldo em Estoque",
+          ]].copy()
+          df_preview["Ajuste Inventario Anterior"] = (
+              df_preview["Código do Produto"]
+              .map(mapa_anterior)
+              .fillna(0)
+              .astype(int)
+          )
+
+        st.success(
+            f"✅ Relatório gerado! **{len(df_just)} itens** filtrados para"
+            f" justificativa (de {len(df_atual)} itens totais)."
+        )
+
+        nome_saida = (
+            f"Relatorio_Inventario_{os.path.splitext(arquivo_csv.name)[0]}.xlsx"
+        )
+        st.download_button(
+            label="📥 Baixar Planilha Excel (.xlsx)",
+            data=excel_bytes,
+            file_name=nome_saida,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="b5_btn_download",
+        )
+
+        with st.expander(
+            "👀 Pré-visualizar itens da aba JUSTIFICAR", expanded=True
+        ):
+          st.dataframe(df_preview, use_container_width=True, hide_index=True)
+
+      except Exception as e:
+        st.error(f"❌ Erro ao processar os arquivos: {e}")
+
+
+# ====================================================================================
 # APLICAÇÃO STREAMLIT PRINCIPAL
 # ====================================================================================
 def main():
@@ -1099,12 +1688,16 @@ def main():
     if caminho_logo_tela:
       st.image(caminho_logo_tela, use_container_width=True)
     st.markdown("### **GRUPO KMB**")
-    st.markdown("*Nova Core 2 • Geração de Conferência*")
+    st.markdown("*Nova Core 2 • Geração de Conferência & Inventário*")
     st.markdown("---")
 
     modo_operacao = st.radio(
         "Modo de Operação:",
-        ["Planilha & PDF de Conferência", "Gerador de Etiquetas QR Code"],
+        [
+            "Planilha & PDF de Conferência",
+            "Gerador de Etiquetas QR Code",
+            "Relatório de Inventário",
+        ],
         key="radio_modo_operacao_nc2",
     )
 
@@ -1117,11 +1710,15 @@ def main():
       """
     <div class="main-header">
         <div class="jarvis-title">⚡ GRUPO KMB // NOVA CORE 2</div>
-        <div style="color: #9ca3af; font-size: 0.85rem; margin-top: 4px;">MÓDULO EXCLUSIVO DE PLANILHA & PDF DE CONFERÊNCIA AUTOMATIZADA</div>
+        <div style="color: #9ca3af; font-size: 0.85rem; margin-top: 4px;">MÓDULO EXCLUSIVO DE PLANILHA, PDF DE CONFERÊNCIA & RELATÓRIO DE INVENTÁRIO</div>
     </div>
     """,
       unsafe_allow_html=True,
   )
+
+  if modo_operacao == "Relatório de Inventário":
+    renderizar_bloco_5_justificar()
+    return
 
   if modo_operacao == "Gerador de Etiquetas QR Code":
     st.markdown(
