@@ -8,6 +8,7 @@ from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 import pandas as pd
 import qrcode
 from reportlab.lib import colors
